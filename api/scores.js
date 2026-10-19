@@ -222,19 +222,22 @@ async function parseBody(req) {
  */
 async function fetchBlobScores(token) {
   try {
-    const listRes = await fetch("https://blob.vercel-storage.com/?limit=50", {
-      headers: {
-        authorization: `Bearer ${token}`,
-        "x-api-version": "7",
+    const listRes = await fetch(
+      "https://blob.vercel-storage.com/?limit=50&prefix=scores",
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-api-version": "7",
+        },
       },
-    });
+    );
     if (!listRes.ok) {
       return { topScores: [], names: [] };
     }
     const listData = await listRes.json();
     const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
     const matching = blobs
-      .filter((b) => b.pathname === "scores.json")
+      .filter((b) => b.pathname.startsWith("scores"))
       .sort(
         (a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0),
       );
@@ -278,20 +281,57 @@ async function uploadBlobScores(token, topScores, names) {
     names,
     scores: topScores,
   });
-  const res = await fetch("https://blob.vercel-storage.com/scores.json", {
+
+  const newPath = `scores-${Date.now()}.json`;
+  const res = await fetch(`https://blob.vercel-storage.com/${newPath}`, {
     method: "PUT",
     headers: {
       authorization: `Bearer ${token}`,
       "x-api-version": "7",
       "content-type": "application/json",
-      "x-add-random-suffix": "0",
-      "x-allow-overwrite": "1",
     },
     body: payload,
   });
   if (!res.ok) {
     throw new Error(`Blob upload failed: status ${res.status}`);
   }
+
+  // Best-effort cleanup of older scores snapshots
+  try {
+    const listRes = await fetch(
+      "https://blob.vercel-storage.com/?limit=50&prefix=scores",
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-api-version": "7",
+        },
+      },
+    );
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
+      const oldBlobs = blobs
+        .filter(
+          (b) =>
+            b.pathname.startsWith("scores") && !b.pathname.includes(newPath),
+        )
+        .map((b) => b.url);
+      if (oldBlobs.length > 0) {
+        await fetch("https://blob.vercel-storage.com/delete", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "x-api-version": "7",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ urls: oldBlobs }),
+        });
+      }
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+
   return true;
 }
 

@@ -1041,7 +1041,11 @@ function initializeApp() {
       if (result.savedId && s.id) {
         return s.id === result.savedId;
       }
-      return s.name === scoreEntry.name && s.score === scoreEntry.score;
+      return (
+        result.success &&
+        s.name === scoreEntry.name &&
+        s.score === scoreEntry.score
+      );
     });
 
     renderLeaderboardTable(
@@ -1055,16 +1059,26 @@ function initializeApp() {
       newIdx,
     );
 
-    if (newIdx !== -1) {
-      if (dom.submitScoreBtn) {
-        dom.submitScoreBtn.textContent = "Saved!";
+    if (result.success) {
+      if (newIdx !== -1) {
+        if (dom.submitScoreBtn) {
+          dom.submitScoreBtn.textContent = "Saved!";
+        }
+        announceStatus("Score saved successfully to top 10 leaderboard!");
+      } else {
+        if (dom.submitScoreBtn) {
+          dom.submitScoreBtn.textContent = "Recorded";
+        }
+        announceStatus("Score recorded, but did not qualify for the top 10.");
       }
-      announceStatus("Score saved successfully to top 10 leaderboard!");
     } else {
       if (dom.submitScoreBtn) {
-        dom.submitScoreBtn.textContent = "Recorded";
+        dom.submitScoreBtn.disabled = false;
+        dom.submitScoreBtn.textContent = "Retry";
       }
-      announceStatus("Score recorded, but did not qualify for the top 10.");
+      announceStatus(
+        "Could not save score to online leaderboard. Saved locally.",
+      );
     }
   }
 

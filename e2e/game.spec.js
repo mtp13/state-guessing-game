@@ -375,6 +375,56 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     );
   });
 
+  test("leaderboard: server failure enables Retry and does not claim Saved", async ({
+    page,
+  }) => {
+    await page.route("**/api/scores*", async (route) => {
+      if (route.request().method() === "POST") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: false,
+            error: "Could not save score",
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ topScores: [], names: [] }),
+        });
+      }
+    });
+
+    await page.goto("./");
+
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    const nameInput = page.locator("#player-name");
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill("Taylor");
+    await page.locator("#submit-score-btn").click();
+
+    const submitBtn = page.locator("#submit-score-btn");
+    await expect(submitBtn).toHaveText("Retry");
+    await expect(submitBtn).not.toBeDisabled();
+    await expect(page.locator("#status-live")).toContainText(
+      "Could not save score",
+    );
+  });
+
   test("leaderboard modal: opening via leaderboard button displays table and closing dismisses it", async ({
     page,
   }) => {
