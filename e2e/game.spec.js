@@ -610,4 +610,82 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
       );
     }
   });
+
+  test("responsive mobile header: button labels fit without overflow or clipping, meet touch targets, and preserve focus outlines", async ({
+    page,
+  }) => {
+    for (const width of [390, 375, 320]) {
+      await page.setViewportSize({ width, height: 667 });
+      await page.goto("./");
+
+      // Verify no horizontal page overflow at iPhone standard widths
+      const pageOverflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth >
+          document.documentElement.clientWidth,
+      );
+      expect(pageOverflow).toBe(false);
+
+      const buttons = page.locator(".header-actions .icon-btn");
+      const count = await buttons.count();
+      expect(count).toBe(3);
+
+      for (let i = 0; i < count; i++) {
+        const btn = buttons.nth(i);
+        await expect(btn).toBeVisible();
+
+        const metrics = await btn.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const textEl = el.querySelector(".btn-text");
+          const textRect = textEl ? textEl.getBoundingClientRect() : null;
+          return {
+            width: rect.width,
+            height: rect.height,
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            textRect,
+            btnRect: { left: rect.left, right: rect.right },
+          };
+        });
+
+        // 44x44px minimum touch target
+        expect(metrics.width).toBeGreaterThanOrEqual(44);
+        expect(metrics.height).toBeGreaterThanOrEqual(44);
+
+        // No horizontal overflow in button
+        expect(metrics.scrollWidth).toBeLessThanOrEqual(
+          metrics.clientWidth + 1,
+        );
+
+        // Text label fits within button boundaries
+        if (metrics.textRect) {
+          expect(metrics.textRect.left).toBeGreaterThanOrEqual(
+            metrics.btnRect.left,
+          );
+          expect(metrics.textRect.right).toBeLessThanOrEqual(
+            metrics.btnRect.right + 1,
+          );
+        }
+      }
+
+      // Verify visible focus outline styles on header buttons
+      for (const selector of [
+        "#sound-toggle",
+        "#leaderboard-btn",
+        "#restart-btn",
+      ]) {
+        const btn = page.locator(selector);
+        await btn.focus();
+        const outline = await btn.evaluate((el) => {
+          const style = window.getComputedStyle(el);
+          return {
+            outlineWidth: parseInt(style.outlineWidth, 10),
+            outlineStyle: style.outlineStyle,
+          };
+        });
+        expect(outline.outlineWidth).toBeGreaterThan(0);
+        expect(outline.outlineStyle).not.toBe("none");
+      }
+    }
+  });
 });

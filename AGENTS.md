@@ -42,6 +42,7 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 | `manifest.webmanifest`                              | Web app manifest                                                                         |
 | `favicon.png`, `icon-{180,192,512}.png`, `icon.svg` | Favicon, iOS touch icon (180×180), and app icons                                         |
 | `vercel.json`, `.vercelignore`                      | Security/CSP and cache headers, plus deploy exclusion list                               |
+| `deferred-review-items.md`                          | Persistent tracking of automated and manual review items across PRs                      |
 | `tests/app.test.js`                                 | Unit tests for pure game logic functions (including 3-strikes rule)                      |
 | `tests/scores.test.js`                              | Unit tests for scoring, sorting, name deduplication, and input validation                |
 | `tests/states-data.test.js`                         | Unit tests validating dataset integrity and completeness                                 |
@@ -58,6 +59,13 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 - **DOM lookups belong in `bindDomElements()`.** Element references and collections (SVG paths, modals, buttons) are queried there, which `initializeApp()` calls on startup. If you add an element, look it up in `bindDomElements()`, never at the top level.
 - **Sound effects:** Web Audio API synthesizer generates synthetic beeps, chords, and clicks on demand (`playSound()`) without external audio files, respecting mute preferences saved in `localStorage`.
 - **Celebration:** Canvas confetti runs dynamically via `startConfetti()` and `stopConfetti()` when the quiz is finished, respecting `prefers-reduced-motion`.
+
+## How `api/scores.js` works
+
+- **Serverless REST integration with Vercel Blob:** Standard Node.js handler communicates with Vercel Blob via its REST API (using `SCORES_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN`) without runtime dependencies, falling back to an in-memory store in local dev or test environments.
+- **Immutable timestamped snapshots:** Avoids CDN cache propagation delays on writes by storing scores in timestamped snapshots (`scores-<ts>.json` where `<ts>` is epoch milliseconds, uploaded with `x-add-random-suffix: "0"`).
+- **Snapshot pruning:** `selectPrunableSnapshots()` retains at least the 2 freshest snapshots while safely identifying older snapshots strictly prior to the current write for background deletion.
+- **Fail-safe HTTP 502 contract:** If Blob storage read or listing fails, `fetchBlobScores()` returns `{ ok: false, error }` and the handler responds with HTTP 502 (`Could not read leaderboard`), preventing transient read failures from wiping existing scores.
 
 ## Conventions
 
@@ -83,7 +91,7 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 - Playwright runs every test both at the root and in a `/state-guessing-game/` subfolder.
 - Vercel previews are behind login protection, so headers and `.vercelignore` can only be checked with `curl` against production after merging.
 - `.vercelignore` excludes `package.json`, `package-lock.json`, tests, docs and tooling configs so Vercel deploys only the app's runtime files and skips `npm install`. `package.json` also has no `build` script, and no build script should be added. Note: `api/` must **never** be added to `.vercelignore`.
-- Serverless storage uses Vercel Blob with static read-write token (`SCORES_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN`). In local dev without `vercel dev` (e.g. `python3 -m http.server`), client falls back smoothly to `localStorage`.
+- Serverless storage uses Vercel Blob with static read-write token (`SCORES_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN`), storing scores in immutable timestamped snapshots (`scores-<ts>.json`) pruned via `selectPrunableSnapshots()` and returning HTTP 502 on read failures to protect leaderboard data. In local dev without `vercel dev` (e.g. `python3 -m http.server`), client falls back smoothly to `localStorage`.
 - If you add a new tooling or config file, add it to `.vercelignore` so it isn't served. Never commit secrets.
 - Security headers (strict CSP, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) and cache rules (`max-age=0, must-revalidate` on `index.html` and `manifest.webmanifest`) live in `vercel.json`. Don't put workarounds in `app.js`.
 
