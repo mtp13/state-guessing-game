@@ -1,0 +1,72 @@
+/**
+ * US States dataset for the State Guessing Game.
+ * Contains all 50 US states with standard 2-letter postal abbreviations,
+ * full names, capital cities, and US Census Bureau regions.
+ */
+
+const STATES = [
+  { id: "AL", name: "Alabama", capital: "Montgomery", region: "South" },
+  { id: "AK", name: "Alaska", capital: "Juneau", region: "West" },
+  { id: "AZ", name: "Arizona", capital: "Phoenix", region: "West" },
+  { id: "AR", name: "Arkansas", capital: "Little Rock", region: "South" },
+  { id: "CA", name: "California", capital: "Sacramento", region: "West" },
+  { id: "CO", name: "Colorado", capital: "Denver", region: "West" },
+  { id: "CT", name: "Connecticut", capital: "Hartford", region: "Northeast" },
+  { id: "DE", name: "Delaware", capital: "Dover", region: "South" },
+  { id: "FL", name: "Florida", capital: "Tallahassee", region: "South" },
+  { id: "GA", name: "Georgia", capital: "Atlanta", region: "South" },
+  { id: "HI", name: "Hawaii", capital: "Honolulu", region: "West" },
+  { id: "ID", name: "Idaho", capital: "Boise", region: "West" },
+  { id: "IL", name: "Illinois", capital: "Springfield", region: "Midwest" },
+  { id: "IN", name: "Indiana", capital: "Indianapolis", region: "Midwest" },
+  { id: "IA", name: "Iowa", capital: "Des Moines", region: "Midwest" },
+  { id: "KS", name: "Kansas", capital: "Topeka", region: "Midwest" },
+  { id: "KY", name: "Kentucky", capital: "Frankfort", region: "South" },
+  { id: "LA", name: "Louisiana", capital: "Baton Rouge", region: "South" },
+  { id: "ME", name: "Maine", capital: "Augusta", region: "Northeast" },
+  { id: "MD", name: "Maryland", capital: "Annapolis", region: "South" },
+  { id: "MA", name: "Massachusetts", capital: "Boston", region: "Northeast" },
+  { id: "MI", name: "Michigan", capital: "Lansing", region: "Midwest" },
+  { id: "MN", name: "Minnesota", capital: "Saint Paul", region: "Midwest" },
+  { id: "MS", name: "Mississippi", capital: "Jackson", region: "South" },
+  { id: "MO", name: "Missouri", capital: "Jefferson City", region: "Midwest" },
+  { id: "MT", name: "Montana", capital: "Helena", region: "West" },
+  { id: "NE", name: "Nebraska", capital: "Lincoln", region: "Midwest" },
+  { id: "NV", name: "Nevada", capital: "Carson City", region: "West" },
+  { id: "NH", name: "New Hampshire", capital: "Concord", region: "Northeast" },
+  { id: "NJ", name: "New Jersey", capital: "Trenton", region: "Northeast" },
+  { id: "NM", name: "New Mexico", capital: "Santa Fe", region: "West" },
+  { id: "NY", name: "New York", capital: "Albany", region: "Northeast" },
+  { id: "NC", name: "North Carolina", capital: "Raleigh", region: "South" },
+  { id: "ND", name: "North Dakota", capital: "Bismarck", region: "Midwest" },
+  { id: "OH", name: "Ohio", capital: "Columbus", region: "Midwest" },
+  { id: "OK", name: "Oklahoma", capital: "Oklahoma City", region: "South" },
+  { id: "OR", name: "Oregon", capital: "Salem", region: "West" },
+  {
+    id: "PA",
+    name: "Pennsylvania",
+    capital: "Harrisburg",
+    region: "Northeast",
+  },
+  {
+    id: "RI",
+    name: "Rhode Island",
+    capital: "Providence",
+    region: "Northeast",
+  },
+  { id: "SC", name: "South Carolina", capital: "Columbia", region: "South" },
+  { id: "SD", name: "South Dakota", capital: "Pierre", region: "Midwest" },
+  { id: "TN", name: "Tennessee", capital: "Nashville", region: "South" },
+  { id: "TX", name: "Texas", capital: "Austin", region: "South" },
+  { id: "UT", name: "Utah", capital: "Salt Lake City", region: "West" },
+  { id: "VT", name: "Vermont", capital: "Montpelier", region: "Northeast" },
+  { id: "VA", name: "Virginia", capital: "Richmond", region: "South" },
+  { id: "WA", name: "Washington", capital: "Olympia", region: "West" },
+  { id: "WV", name: "West Virginia", capital: "Charleston", region: "South" },
+  { id: "WI", name: "Wisconsin", capital: "Madison", region: "Midwest" },
+  { id: "WY", name: "Wyoming", capital: "Cheyenne", region: "West" },
+];
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { STATES };
+}
