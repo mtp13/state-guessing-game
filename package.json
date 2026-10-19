@@ -1,0 +1,20 @@
+{
+  "name": "state-guessing-game",
+  "version": "1.0.0",
+  "description": "Clean, modern US State Guessing Game for Desktop and Mobile",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "playwright test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:html": "html-validate index.html",
+    "lint": "npm run format:check && npm run lint:html"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "html-validate": "11.16.4",
+    "prettier": "3.9.10"
+  }
+}
