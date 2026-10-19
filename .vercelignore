@@ -15,4 +15,5 @@ playwright.config.*
 .git-blame-ignore-revs
 .e2e-root/
 README.md
+deferred-review-items.md
 docs/
