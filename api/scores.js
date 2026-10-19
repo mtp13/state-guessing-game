@@ -282,7 +282,8 @@ async function uploadBlobScores(token, topScores, names) {
     scores: topScores,
   });
 
-  const newPath = `scores-${Date.now()}.json`;
+  const now = Date.now();
+  const newPath = `scores-${now}.json`;
   const res = await fetch(`https://blob.vercel-storage.com/${newPath}`, {
     method: "PUT",
     headers: {
@@ -296,7 +297,8 @@ async function uploadBlobScores(token, topScores, names) {
     throw new Error(`Blob upload failed: status ${res.status}`);
   }
 
-  // Best-effort cleanup of older scores snapshots
+  // Safe cleanup: always retain at least the 2 freshest snapshots,
+  // and only delete older snapshots strictly prior to this write.
   try {
     const listRes = await fetch(
       "https://blob.vercel-storage.com/?limit=50&prefix=scores",
@@ -310,12 +312,20 @@ async function uploadBlobScores(token, topScores, names) {
     if (listRes.ok) {
       const listData = await listRes.json();
       const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
-      const oldBlobs = blobs
-        .filter(
-          (b) =>
-            b.pathname.startsWith("scores") && !b.pathname.includes(newPath),
-        )
+      const snapshots = blobs
+        .filter((b) => /^scores-\d+\.json$/.test(b.pathname))
+        .sort(
+          (a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0),
+        );
+
+      const oldBlobs = snapshots
+        .slice(2)
+        .filter((b) => {
+          const m = b.pathname.match(/^scores-(\d+)\.json$/);
+          return m && Number(m[1]) < now;
+        })
         .map((b) => b.url);
+
       if (oldBlobs.length > 0) {
         await fetch("https://blob.vercel-storage.com/delete", {
           method: "POST",
