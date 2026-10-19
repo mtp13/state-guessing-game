@@ -69,6 +69,28 @@
 
             <button
               type="button"
+              id="leaderboard-btn"
+              class="icon-btn"
+              aria-label="View top scores"
+              title="Top scores"
+            >
+              <svg
+                class="icon"
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+              >
+                <path
+                  fill="currentColor"
+                  d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94A5.01 5.01 0 0 0 11 15.9V19H7v2h10v-2h-4v-3.1a5.01 5.01 0 0 0 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"
+                />
+              </svg>
+              <span class="btn-text">Scores</span>
+            </button>
+
+            <button
+              type="button"
               id="restart-btn"
               class="icon-btn"
               aria-label="Restart game"
@@ -101,9 +123,6 @@
                 >Alabama</strong
               >
             </div>
-            <button type="button" id="skip-btn" class="btn btn-secondary">
-              Skip State
-            </button>
           </div>
         </section>
 
@@ -119,6 +138,21 @@
                 <span id="total-rounds">50</span></span
               >
             </div>
+            <div class="stat-card" id="strikes-card">
+              <span class="stat-label">Strikes</span>
+              <span
+                id="strikes-count"
+                class="stat-value"
+                role="status"
+                aria-label="0 of 3 strikes"
+                >0 / 3</span
+              >
+              <div class="strike-pips" aria-hidden="true">
+                <span class="pip"></span>
+                <span class="pip"></span>
+                <span class="pip"></span>
+              </div>
+            </div>
             <div class="stat-card">
               <span class="stat-label">Score</span>
               <span id="score-count" class="stat-value">0</span>
@@ -126,6 +160,10 @@
             <div class="stat-card">
               <span class="stat-label">Streak</span>
               <span id="streak-count" class="stat-value">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Best</span>
+              <span id="best-score" class="stat-value">0</span>
             </div>
             <div class="stat-card">
               <span class="stat-label">Accuracy</span>
@@ -1030,83 +1068,6 @@
           </div>
         </section>
 
-        <section class="ne-dock" aria-label="Small Eastern States Quick Select">
-          <div class="ne-dock-header">
-            <h2 class="ne-dock-title">Small Eastern States:</h2>
-            <span class="ne-dock-hint">(Quick Select)</span>
-          </div>
-          <div
-            class="ne-chips-grid"
-            role="group"
-            aria-label="Small eastern state buttons"
-          >
-            <button
-              type="button"
-              class="state-chip"
-              data-state="RI"
-              aria-label="RI - Rhode Island"
-            >
-              RI
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="DE"
-              aria-label="DE - Delaware"
-            >
-              DE
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="CT"
-              aria-label="CT - Connecticut"
-            >
-              CT
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="NJ"
-              aria-label="NJ - New Jersey"
-            >
-              NJ
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="MD"
-              aria-label="MD - Maryland"
-            >
-              MD
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="MA"
-              aria-label="MA - Massachusetts"
-            >
-              MA
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="VT"
-              aria-label="VT - Vermont"
-            >
-              VT
-            </button>
-            <button
-              type="button"
-              class="state-chip"
-              data-state="NH"
-              aria-label="NH - New Hampshire"
-            >
-              NH
-            </button>
-          </div>
-        </section>
-
         <div
           id="status-live"
           class="sr-only"
@@ -1140,6 +1101,55 @@
               </div>
             </div>
 
+            <form id="save-score-form" class="save-score-form">
+              <label for="player-name" class="form-label"
+                >Enter your name for the Top 10:</label
+              >
+              <div class="form-group">
+                <input
+                  type="text"
+                  id="player-name"
+                  name="playerName"
+                  class="input-text"
+                  list="player-names-list"
+                  maxlength="25"
+                  required
+                  placeholder="Your name"
+                  autocomplete="off"
+                />
+                <datalist id="player-names-list"></datalist>
+                <button
+                  type="submit"
+                  id="submit-score-btn"
+                  class="btn btn-primary"
+                >
+                  Save Score
+                </button>
+              </div>
+            </form>
+
+            <section
+              class="leaderboard-table-container"
+              tabindex="0"
+              aria-label="Top 10 High Scores"
+            >
+              <table id="game-over-leaderboard" class="leaderboard-table">
+                <caption class="sr-only">
+                  Top 10 High Scores
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Accuracy</th>
+                    <th scope="col">Date</th>
+                  </tr>
+                </thead>
+                <tbody id="game-over-leaderboard-body"></tbody>
+              </table>
+            </section>
+
             <div class="modal-actions">
               <button
                 type="button"
@@ -1147,6 +1157,46 @@
                 class="btn btn-primary btn-large"
               >
                 Play Again
+              </button>
+            </div>
+          </div>
+        </dialog>
+
+        <dialog
+          id="leaderboard-modal"
+          class="modal-dialog"
+          aria-labelledby="leaderboard-title"
+        >
+          <div class="modal-card">
+            <h2 id="leaderboard-title" class="modal-title">Top 10 Scores</h2>
+            <section
+              class="leaderboard-table-container"
+              tabindex="0"
+              aria-label="All-Time Top 10 High Scores"
+            >
+              <table id="leaderboard-table" class="leaderboard-table">
+                <caption class="sr-only">
+                  All-Time Top 10 High Scores
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Accuracy</th>
+                    <th scope="col">Date</th>
+                  </tr>
+                </thead>
+                <tbody id="leaderboard-table-body"></tbody>
+              </table>
+            </section>
+            <div class="modal-actions">
+              <button
+                type="button"
+                id="close-leaderboard-btn"
+                class="btn btn-secondary"
+              >
+                Close
               </button>
             </div>
           </div>

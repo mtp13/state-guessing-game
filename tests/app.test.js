@@ -50,6 +50,11 @@ test("createGameState initializes fresh state with proper defaults", () => {
   assert.equal(game.attempts, 0);
   assert.equal(game.streak, 0);
   assert.equal(game.maxStreak, 0);
+  assert.equal(game.strikes, 0);
+  assert.equal(game.wrongGuesses, 0);
+  assert.equal(game.maxWrongGuesses, 3);
+  assert.equal(game.revealedStateId, null);
+  assert.equal(game.gameOverReason, null);
   assert.deepEqual(game.history, {});
   assert.equal(game.completed, false);
 });
@@ -150,6 +155,47 @@ test("a wrong guess does not mark the target as incorrect in history", () => {
     "wrong guess must not persist a status",
   );
   assert.equal(game.attempts, 1);
+});
+
+test("three strikes rule: 1st, 2nd, and 3rd wrong guesses behave correctly", () => {
+  const mockQueue = [
+    { id: "TX", name: "Texas" },
+    { id: "CA", name: "California" },
+  ];
+  const game = createGameState(STATES, mockQueue);
+
+  // 1st wrong guess: strikes = 1, game continues, target remains unrevealed
+  const res1 = evaluateGuess(game, "FL");
+  assert.equal(res1.isCorrect, false);
+  assert.equal(game.strikes, 1);
+  assert.equal(game.wrongGuesses, 1);
+  assert.equal(game.completed, false);
+  assert.equal(game.gameOverReason, null);
+  assert.equal(game.revealedStateId, null);
+  assert.equal(game.history["TX"], undefined);
+  assert.equal(game.currentIndex, 0);
+
+  // 2nd wrong guess: strikes = 2, game continues
+  const res2 = evaluateGuess(game, "NY");
+  assert.equal(res2.isCorrect, false);
+  assert.equal(game.strikes, 2);
+  assert.equal(game.wrongGuesses, 2);
+  assert.equal(game.completed, false);
+  assert.equal(game.gameOverReason, null);
+  assert.equal(game.revealedStateId, null);
+  assert.equal(game.history["TX"], undefined);
+  assert.equal(game.currentIndex, 0);
+
+  // 3rd wrong guess: strikes = 3, game completes with gameOverReason = "three_strikes",
+  // target state marked status: "revealed", and revealedStateId = targetState.id
+  const res3 = evaluateGuess(game, "WA");
+  assert.equal(res3.isCorrect, false);
+  assert.equal(game.strikes, 3);
+  assert.equal(game.wrongGuesses, 3);
+  assert.equal(game.completed, true);
+  assert.equal(game.gameOverReason, "three_strikes");
+  assert.equal(game.revealedStateId, "TX");
+  assert.equal(game.history["TX"]?.status, "revealed");
 });
 
 test("skipCurrentState marks state skipped and advances queue", () => {

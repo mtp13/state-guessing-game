@@ -5,10 +5,11 @@ Guidance for AI coding agents (Claude Code, Gemini CLI, Codex, etc.) working in 
 
 ## Project
 
-A modern, accessible US State Guessing Game for desktop and mobile, written in plain HTML, CSS and JavaScript. Players are prompted to locate states on an interactive SVG map, featuring synthesized audio feedback, streak tracking, a quick-select tray for dense northeastern states, and canvas confetti upon completion.
+A modern, accessible US State Guessing Game for desktop and mobile, written in plain HTML, CSS and JavaScript. Players are prompted to locate states on an interactive SVG map, featuring synthesized audio feedback, streak tracking, a three-strikes game over rule with revealed target state on the third strike, all-time top 10 leaderboard with player name autocomplete, and canvas confetti upon completion.
 
 - **Dev dependencies for tooling are allowed, runtime dependencies are not, and there must never be a build step.** Don't add frameworks, runtime npm packages, a bundler or a build pipeline unless asked.
 - The browser loads `states-data.js` and `app.js` directly as classic `<script>` tags, not ES modules.
+- Serverless scoring endpoint in `api/scores.js` uses standard Node.js without runtime dependencies, integrating with Vercel Blob via its REST API.
 
 ## Commands
 
@@ -20,6 +21,7 @@ npm run lint                                 # prettier --check . && html-valida
 npm run lint:html                            # html-validate index.html
 node --check app.js                          # syntax check (CI runs this too)
 node --check states-data.js                  # syntax check
+node --check api/scores.js                   # syntax check
 python3 -m http.server 4381                  # serve locally
 ```
 
@@ -28,28 +30,32 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 
 ## Layout
 
-| File                                                | Purpose                                                                                 |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `index.html`                                        | All markup: interactive SVG map, prompt banner, Northeast chip tray, score HUD, dialog  |
-| `app.js`                                            | All game logic: pure quiz engine, DOM binding, Web Audio sounds, confetti, event wiring |
-| `states-data.js`                                    | Master dataset of 50 US states (postal IDs, names, capitals, regions, coordinates)      |
-| `style.css`                                         | Styles, organised in `@layer reset, base, theme, components, utilities`                 |
-| `reset.css`                                         | The `reset` layer                                                                       |
-| `map.svg`                                           | Vector source for the US map paths                                                      |
-| `manifest.webmanifest`                              | Web app manifest                                                                        |
-| `favicon.png`, `icon-{180,192,512}.png`, `icon.svg` | Favicon, iOS touch icon (180×180), and app icons                                        |
-| `vercel.json`, `.vercelignore`                      | Security/CSP and cache headers, plus deploy exclusion list                              |
-| `tests/app.test.js`                                 | Unit tests for pure game logic functions                                                |
-| `tests/states-data.test.js`                         | Unit tests validating dataset integrity and completeness                                |
-| `tests/markup.test.js`                              | Static assets, markup structure, relative paths, and CSP compliance tests               |
-| `e2e/game.spec.js`, `playwright.config.js`          | Real-browser Playwright E2E, gameplay, layout and axe accessibility tests               |
-| `e2e/csp-fixture.js`                                | Playwright fixture that applies the `vercel.json` CSP to every HTML document            |
+| File                                                | Purpose                                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `index.html`                                        | All markup: interactive SVG map, prompt banner, score HUD, strikes counter, modals       |
+| `app.js`                                            | All game logic: pure quiz engine, 3-strikes rule, DOM binding, leaderboard, Web Audio    |
+| `api/scores.js`                                     | Serverless endpoint: Vercel Blob REST integration, Top 10 high scores, unique names list |
+| `states-data.js`                                    | Master dataset of 50 US states (postal IDs, names, capitals, regions, coordinates)       |
+| `style.css`                                         | Styles, organised in `@layer reset, base, theme, components, utilities`                  |
+| `reset.css`                                         | The `reset` layer                                                                        |
+| `map.svg`                                           | Vector source for the US map paths                                                       |
+| `manifest.webmanifest`                              | Web app manifest                                                                         |
+| `favicon.png`, `icon-{180,192,512}.png`, `icon.svg` | Favicon, iOS touch icon (180×180), and app icons                                         |
+| `vercel.json`, `.vercelignore`                      | Security/CSP and cache headers, plus deploy exclusion list                               |
+| `tests/app.test.js`                                 | Unit tests for pure game logic functions (including 3-strikes rule)                      |
+| `tests/scores.test.js`                              | Unit tests for scoring, sorting, name deduplication, and input validation                |
+| `tests/states-data.test.js`                         | Unit tests validating dataset integrity and completeness                                 |
+| `tests/markup.test.js`                              | Static assets, markup structure, relative paths, and CSP compliance tests                |
+| `e2e/game.spec.js`, `playwright.config.js`          | Real-browser Playwright E2E, gameplay, layout, strikes, leaderboard, and axe a11y tests  |
+| `e2e/csp-fixture.js`                                | Playwright fixture that applies the `vercel.json` CSP to every HTML document             |
 
 ## How `app.js` works
 
 - **It runs in both the browser and Node.** At the bottom, `initializeApp()` runs only if `document` exists, and `module.exports` is set only if `module` exists. Keep both guards. Don't use top-level `import`/`export`, and don't touch the DOM at the top level of the file.
 - **Pure logic functions are exported for testing:** `shuffleStates`, `createGameState`, `evaluateGuess`, `skipCurrentState`, and `calculateAccuracy` operate on explicit state objects without side effects or DOM access.
-- **DOM lookups belong in `bindDomElements()`.** Element references and collections (SVG paths, chip buttons) are queried there, which `initializeApp()` calls on startup. If you add an element, look it up in `bindDomElements()`, never at the top level.
+- **Three-strikes game rule:** Players get up to 3 strikes (wrong guesses). On the 3rd wrong guess, the quiz ends immediately and the correct target state is highlighted with `data-status="revealed"` on the map with audio and live screen-reader announcements before transitioning to the Game Over dialog.
+- **Top 10 leaderboard & autocomplete:** Persists top 10 scores and unique player names via `./api/scores` with fallback to `localStorage`. Player names are suggested via a `<datalist>` to prevent duplicate spellings.
+- **DOM lookups belong in `bindDomElements()`.** Element references and collections (SVG paths, modals, buttons) are queried there, which `initializeApp()` calls on startup. If you add an element, look it up in `bindDomElements()`, never at the top level.
 - **Sound effects:** Web Audio API synthesizer generates synthetic beeps, chords, and clicks on demand (`playSound()`) without external audio files, respecting mute preferences saved in `localStorage`.
 - **Celebration:** Canvas confetti runs dynamically via `startConfetti()` and `stopConfetti()` when the quiz is finished, respecting `prefers-reduced-motion`.
 
