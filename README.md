@@ -1,15 +1,16 @@
 # US State Guessing Game
 
-A fast, modern, and accessible US State Guessing Game for mobile and desktop, written in plain HTML, CSS, and JavaScript with no build step. Players identify states on an interactive SVG map with instant audio feedback, streak tracking, a quick-select tray for compact northeastern states, and canvas confetti on completion.
+A fast, modern, and accessible US State Guessing Game for mobile and desktop, written in plain HTML, CSS, and JavaScript with zero runtime dependencies. Players locate states on an interactive SVG map with instant audio feedback, streak tracking, a three-strikes game over rule with revealed target state, an all-time top 10 leaderboard with name autocomplete, and canvas confetti on completion.
 
 **[Play it live → mike.pullen.dev/state-guessing-game](https://mike.pullen.dev/state-guessing-game/)**
 
 ## Features
 
 - **Interactive SVG Map:** Clickable and keyboard-navigable map of all 50 states.
-- **Northeast Quick-Select:** Dedicated chip tray for easily targeting small northeastern states on touchscreens.
+- **Three-Strikes Rule:** Players have up to 3 wrong guesses; on the 3rd strike the quiz ends and the correct target state is highlighted on the map.
+- **Top 10 Leaderboard & Autocomplete:** Persistent high scores across devices backed by a lightweight serverless endpoint, with player name suggestions to avoid duplicate spellings.
 - **Audio Feedback:** Synthesized sound effects using the Web Audio API with a persistent mute toggle.
-- **Score & Streak Tracking:** Real-time accuracy, streak counter, and final statistics modal dialog.
+- **Score & Streak Tracking:** Real-time accuracy, streak counter, strikes indicators, and modal statistics dialog.
 - **Accessibility:** Zero axe violations, visible `:focus-visible` styles, and screen reader announcements via `aria-live`.
 - **Works on Desktop & Mobile:** Responsive layout supporting safe-area insets, `dvh` units, and touch interactions.
 
@@ -21,7 +22,7 @@ There is no build step. Serve the folder over HTTP:
 python3 -m http.server 4381
 ```
 
-Then open <http://localhost:4381/>.
+Then open <http://localhost:4381/>. (Note: `/api/scores` requires `vercel dev` or falls back gracefully to `localStorage` when run under python3 http.server).
 
 | Command            | What it does                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------- |
@@ -39,7 +40,7 @@ npx playwright install chromium webkit
 
 ## Tech
 
-Plain HTML, CSS, and JavaScript with no framework, no runtime dependencies, and no build step. Deployed to [Vercel](https://vercel.com) as a static site, with CI running on GitHub Actions (Node 22).
+Plain HTML, CSS, and JavaScript with no framework, no runtime dependencies, and no build step. Deployed to [Vercel](https://vercel.com) with a Node.js serverless scoring function (`api/scores.js`) integrating with Vercel Blob REST storage. CI runs on GitHub Actions (Node 22).
 
 ## Contributing
 

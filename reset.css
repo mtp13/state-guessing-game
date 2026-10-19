@@ -59,4 +59,8 @@
   h6 {
     text-wrap: balance;
   }
+
+  [hidden] {
+    display: none !important;
+  }
 }

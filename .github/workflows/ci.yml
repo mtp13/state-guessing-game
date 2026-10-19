@@ -31,6 +31,7 @@ jobs:
         run: |
           node --check app.js
           node --check states-data.js
+          node --check api/scores.js
 
       - name: Run unit & integration test suite
         run: npm test

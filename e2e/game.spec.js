@@ -29,6 +29,49 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
         );
       });
     });
+
+    await page.route("**/api/scores*", async (route) => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() || {};
+        const savedId = "test-saved-id-123";
+        const serverEntry = {
+          id: savedId,
+          name: body.name,
+          score: body.score,
+          accuracy: body.accuracy,
+          streak: body.streak,
+          date: new Date().toISOString(),
+        };
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            savedId,
+            topScores: [serverEntry],
+            names: [body.name],
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            topScores: [
+              {
+                id: "initial-alex-id",
+                name: "Alex",
+                score: 25,
+                accuracy: "75%",
+                streak: 8,
+                date: "2026-10-18T10:00:00.000Z",
+              },
+            ],
+            names: ["Alex"],
+          }),
+        });
+      }
+    });
   });
 
   test.afterEach(async ({ page }) => {
@@ -57,22 +100,35 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(soundToggle).toHaveAttribute("aria-pressed", "false");
     await expect(soundToggle).toHaveAttribute("aria-label", "Mute sound");
 
+    const leaderboardBtn = page.locator("#leaderboard-btn");
+    await expect(leaderboardBtn).toBeVisible();
+    await expect(leaderboardBtn).toHaveAttribute(
+      "aria-label",
+      "View top scores",
+    );
+
     const restartBtn = page.locator("#restart-btn");
     await expect(restartBtn).toBeVisible();
     await expect(restartBtn).toHaveAttribute("aria-label", "Restart game");
 
-    // Prompt section
+    // Prompt card section
+    await expect(page.locator("#prompt-card")).toBeVisible();
     await expect(page.locator(".prompt-label")).toHaveText("Find:");
     const targetState = page.locator("#target-state-name");
     await expect(targetState).toBeVisible();
     const initialTargetName = await targetState.textContent();
     expect(initialTargetName.trim().length).toBeGreaterThan(0);
 
-    const skipBtn = page.locator("#skip-btn");
-    await expect(skipBtn).toBeVisible();
-    await expect(skipBtn).toBeEnabled();
+    // Strikes counter with 3 pips
+    const strikesCard = page.locator("#strikes-card");
+    await expect(strikesCard).toBeVisible();
+    const strikesCount = page.locator("#strikes-count");
+    await expect(strikesCount).toHaveText("0 / 3");
+    const pips = page.locator(".strike-pips .pip");
+    await expect(pips).toHaveCount(3);
+    await expect(page.locator(".strike-pips .pip.active")).toHaveCount(0);
 
-    // Stats bar
+    // Stats bar: progress, score, streak, accuracy
     await expect(page.locator("#current-round")).toHaveText("1");
     await expect(page.locator("#total-rounds")).toHaveText("50");
     await expect(page.locator("#score-count")).toHaveText("0");
@@ -91,23 +147,22 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(firstState).toHaveAttribute("role", "button");
     await expect(firstState).toHaveAttribute("tabindex", "0");
 
-    // Northeast quick select chips
-    const chips = page.locator(".state-chip");
-    await expect(chips).toHaveCount(8);
-    for (let i = 0; i < 8; i++) {
-      await expect(chips.nth(i)).toBeEnabled();
-    }
-
     // Live status announcement
     const liveStatus = page.locator("#status-live");
     await expect(liveStatus).toContainText("Game started. Find");
 
-    // Game over modal closed initially
-    const modal = page.locator("#game-over-modal");
-    await expect(modal).not.toHaveAttribute("open", "");
+    // Modals closed initially
+    await expect(page.locator("#game-over-modal")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await expect(page.locator("#leaderboard-modal")).not.toHaveAttribute(
+      "open",
+      "",
+    );
   });
 
-  test("accessibility: zero axe violations across initial, in-game, and game-over states (light and dark)", async ({
+  test("accessibility: zero axe violations across initial, mid-game (1 strike), game-over (3 strikes), and leaderboard modal", async ({
     page,
   }) => {
     await page.goto("./");
@@ -128,46 +183,49 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("./");
 
-    // 3. In-game state: click correct target state, then click an incorrect state
+    // 3. Mid-game audit with 1 strike
     const targetName = (
       await page.locator("#target-state-name").textContent()
     ).trim();
-    const targetState = page.locator(`.state[data-name="${targetName}"]`);
-    await targetState.dispatchEvent("click");
-    await expect(page.locator("#score-count")).toHaveText("1");
-
-    // Click an incorrect state
-    const nextTargetName = (
-      await page.locator("#target-state-name").textContent()
-    ).trim();
     const wrongState = page
-      .locator(`.state:not([data-name="${nextTargetName}"])`)
+      .locator(`.state:not([data-name="${targetName}"])`)
       .first();
     await wrongState.dispatchEvent("click");
+    await expect(page.locator("#strikes-count")).toHaveText("1 / 3");
 
-    const inGameScan = await new AxeBuilder({ page })
+    const midGameScan = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa"])
       .analyze();
-    expect(inGameScan.violations).toEqual([]);
+    expect(midGameScan.violations).toEqual([]);
 
-    // 4. Game-over state: complete the game by skipping remaining states
-    await page.evaluate(() => {
-      const skipBtn = document.getElementById("skip-btn");
-      while (!document.getElementById("game-over-modal").open) {
-        skipBtn.click();
-      }
-    });
+    // 4. 3 strikes game-over audit (target revealed and save-score form visible)
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
 
     const modal = page.locator("#game-over-modal");
     await expect(modal).toBeVisible();
+    await expect(page.locator("#save-score-form")).toBeVisible();
 
     const gameOverScan = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa"])
       .analyze();
     expect(gameOverScan.violations).toEqual([]);
+
+    // 5. Leaderboard modal open audit
+    await page.locator("#play-again-btn").click();
+    await expect(modal).not.toHaveAttribute("open", "");
+
+    await page.locator("#leaderboard-btn").click();
+    const leaderboardModal = page.locator("#leaderboard-modal");
+    await expect(leaderboardModal).toBeVisible();
+
+    const leaderboardScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(leaderboardScan.violations).toEqual([]);
   });
 
-  test("gameplay: clicking correct state increments score & streak and updates target", async ({
+  test("gameplay: clicking correct target state increments score & streak and marks state correct", async ({
     page,
   }) => {
     await page.goto("./");
@@ -195,43 +253,32 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     expect(nextTargetName).not.toBe(targetName);
   });
 
-  test("gameplay: clicking incorrect state resets streak and announces error", async ({
+  test("gameplay: clicking wrong state increments strikes and activates pip", async ({
     page,
   }) => {
     await page.goto("./");
 
-    // First make one correct guess to get streak = 1
     const targetName = (
       await page.locator("#target-state-name").textContent()
     ).trim();
-    await page
-      .locator(`.state[data-name="${targetName}"]`)
-      .dispatchEvent("click");
-    await expect(page.locator("#streak-count")).toHaveText("1");
-
-    // Now click an incorrect state
-    const nextTargetName = (
-      await page.locator("#target-state-name").textContent()
-    ).trim();
     const wrongState = page
-      .locator(
-        `.state:not([data-name="${nextTargetName}"]):not([data-status="correct"])`,
-      )
+      .locator(`.state:not([data-name="${targetName}"])`)
       .first();
     const wrongStateName = await wrongState.getAttribute("data-name");
 
     await wrongState.dispatchEvent("click");
 
-    await expect(page.locator("#score-count")).toHaveText("1");
+    await expect(page.locator("#strikes-count")).toHaveText("1 / 3");
+    await expect(page.locator(".strike-pips .pip.active")).toHaveCount(1);
     await expect(page.locator("#streak-count")).toHaveText("0");
     await expect(page.locator("#status-live")).toContainText(
       `Incorrect. That was ${wrongStateName}`,
     );
     // Target state remains unchanged
-    await expect(page.locator("#target-state-name")).toHaveText(nextTargetName);
+    await expect(page.locator("#target-state-name")).toHaveText(targetName);
   });
 
-  test("gameplay: skip button marks state as skipped and advances queue", async ({
+  test("gameplay: 3 wrong guesses triggers 3rd strike, reveals target state, and displays game over modal", async ({
     page,
   }) => {
     await page.goto("./");
@@ -239,55 +286,212 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     const targetName = (
       await page.locator("#target-state-name").textContent()
     ).trim();
-    const statePath = page.locator(`.state[data-name="${targetName}"]`);
+    const targetState = page.locator(`.state[data-name="${targetName}"]`);
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
 
-    await page.locator("#skip-btn").click();
+    // 1st wrong guess
+    await wrongState.dispatchEvent("click");
+    await expect(page.locator("#strikes-count")).toHaveText("1 / 3");
+    await expect(page.locator(".strike-pips .pip.active")).toHaveCount(1);
 
-    await expect(page.locator("#score-count")).toHaveText("0");
-    await expect(page.locator("#streak-count")).toHaveText("0");
-    await expect(page.locator("#current-round")).toHaveText("2");
-    await expect(statePath).toHaveAttribute("data-status", "skipped");
-    await expect(statePath).toHaveAttribute("aria-disabled", "true");
+    // 2nd wrong guess
+    await wrongState.dispatchEvent("click");
+    await expect(page.locator("#strikes-count")).toHaveText("2 / 3");
+    await expect(page.locator(".strike-pips .pip.active")).toHaveCount(2);
 
-    await expect(page.locator("#status-live")).toContainText(
-      `Skipped ${targetName}`,
+    // 3rd wrong guess
+    await wrongState.dispatchEvent("click");
+    await expect(page.locator("#strikes-count")).toHaveText("3 / 3");
+    await expect(page.locator(".strike-pips .pip.active")).toHaveCount(3);
+
+    // Target state gets data-status="revealed"
+    await expect(targetState).toHaveAttribute("data-status", "revealed");
+
+    // Modal opens after strike timeout and displays "Game Over (3 Strikes)"
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+    await expect(page.locator("#game-over-title")).toHaveText(
+      "Game Over (3 Strikes)",
     );
+    await expect(page.locator("#game-over-summary")).toContainText("3 strikes");
+
+    // Play again restarts the game
+    const playAgainBtn = page.locator("#play-again-btn");
+    await playAgainBtn.click();
+    await expect(modal).not.toHaveAttribute("open", "");
+    await expect(page.locator("#strikes-count")).toHaveText("0 / 3");
+    await expect(page.locator("#score-count")).toHaveText("0");
+    await expect(page.locator(".strike-pips .pip.active")).toHaveCount(0);
+    await expect(targetState).not.toHaveAttribute("data-status", /.*/);
   });
 
-  test("gameplay: Northeast quick-select chips allow guessing small states", async ({
+  test("leaderboard: name input autocomplete has datalist and saves score", async ({
     page,
   }) => {
     await page.goto("./");
 
-    const neCodes = ["RI", "DE", "CT", "NJ", "MD", "MA", "VT", "NH"];
+    // Datalist is populated from existing scores
+    const datalist = page.locator("#player-names-list");
+    await expect(datalist).toBeAttached();
+    await expect(datalist.locator("option")).toHaveCount(1);
+    await expect(datalist.locator("option").first()).toHaveAttribute(
+      "value",
+      "Alex",
+    );
 
-    // Skip until the target state is one of the NE states
-    for (let i = 0; i < 50; i++) {
-      const currentTargetName = (
-        await page.locator("#target-state-name").textContent()
-      ).trim();
-      const currentTargetState = page.locator(
-        `.state[data-name="${currentTargetName}"]`,
-      );
-      const currentId = await currentTargetState.getAttribute("id");
+    // Trigger 3 strikes to open game over modal
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
 
-      if (neCodes.includes(currentId)) {
-        // Found a NE target! Click its corresponding chip
-        const chip = page.locator(`.state-chip[data-state="${currentId}"]`);
-        await chip.click();
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
 
-        await expect(page.locator("#score-count")).toHaveText("1");
-        await expect(chip).toHaveAttribute("data-status", "correct");
-        await expect(chip).toBeDisabled();
-        await expect(currentTargetState).toHaveAttribute(
-          "data-status",
-          "correct",
-        );
-        break;
+    const nameInput = page.locator("#player-name");
+    await expect(nameInput).toBeVisible();
+    await expect(nameInput).toHaveAttribute("list", "player-names-list");
+
+    // Enter player name and submit
+    await nameInput.fill("Taylor");
+    await page.locator("#submit-score-btn").click();
+
+    await expect(page.locator("#submit-score-btn")).toHaveText("Saved!");
+    await expect(page.locator("#game-over-leaderboard")).toContainText(
+      "Taylor",
+    );
+    await expect(
+      page.locator("#game-over-leaderboard tr.highlight-row"),
+    ).toContainText("Taylor");
+    await expect(page.locator("#status-live")).toContainText(
+      "Score saved successfully",
+    );
+  });
+
+  test("leaderboard: server failure enables Retry and does not claim Saved", async ({
+    page,
+  }) => {
+    await page.route("**/api/scores*", async (route) => {
+      if (route.request().method() === "POST") {
+        await route.fulfill({
+          status: 502,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: "Could not save score",
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ topScores: [], names: [] }),
+        });
       }
+    });
 
-      await page.locator("#skip-btn").click();
-    }
+    await page.goto("./");
+
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    const nameInput = page.locator("#player-name");
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill("Taylor");
+    await page.locator("#submit-score-btn").click();
+
+    const submitBtn = page.locator("#submit-score-btn");
+    await expect(submitBtn).toHaveText("Retry");
+    await expect(submitBtn).not.toBeDisabled();
+    await expect(page.locator("#status-live")).toContainText(
+      "Could not save score",
+    );
+
+    // Browser logs "Failed to load resource: the server responded with a status of 502" to console on 502
+    consoleErrors = consoleErrors.filter((msg) => !msg.includes("502"));
+  });
+
+  test("leaderboard: score that does not qualify for top 10 hides save form", async ({
+    page,
+  }) => {
+    const fullTop10 = Array.from({ length: 10 }, (_, i) => ({
+      id: `score_${i + 1}`,
+      name: `Player ${i + 1}`,
+      score: 50 - i, // 50 down to 41
+      accuracy: 100,
+      streak: 50 - i,
+      date: new Date(2026, 0, i + 1).toISOString(),
+    }));
+
+    await page.route("**/api/scores*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          topScores: fullTop10,
+          names: fullTop10.map((s) => s.name),
+        }),
+      });
+    });
+
+    await page.goto("./");
+
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    // Since player scored 0 and top 10 lowest is 41, save form must be hidden
+    await expect(page.locator("#save-score-form")).toBeHidden();
+    await expect(page.locator("#game-over-leaderboard")).toBeVisible();
+    await expect(page.locator("#game-over-leaderboard")).toContainText(
+      "Player 1",
+    );
+  });
+
+  test("leaderboard modal: opening via leaderboard button displays table and closing dismisses it", async ({
+    page,
+  }) => {
+    await page.goto("./");
+
+    const leaderboardBtn = page.locator("#leaderboard-btn");
+    await leaderboardBtn.click();
+
+    const modal = page.locator("#leaderboard-modal");
+    await expect(modal).toBeVisible();
+    await expect(page.locator("#leaderboard-title")).toHaveText(
+      "Top 10 Scores",
+    );
+    await expect(page.locator("#leaderboard-table")).toBeVisible();
+    await expect(page.locator("#leaderboard-table")).toContainText("Alex");
+
+    const closeBtn = page.locator("#close-leaderboard-btn");
+    await closeBtn.click();
+    await expect(modal).not.toHaveAttribute("open", "");
   });
 
   test("keyboard navigation: state paths and controls can be activated via Enter and Space", async ({
@@ -295,11 +499,11 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
   }) => {
     await page.goto("./");
 
-    // 1. Activate skip button via Space key
-    const skipBtn = page.locator("#skip-btn");
-    await skipBtn.focus();
+    // 1. Activate sound toggle via Space key
+    const soundToggle = page.locator("#sound-toggle");
+    await soundToggle.focus();
     await page.keyboard.press("Space");
-    await expect(page.locator("#current-round")).toHaveText("2");
+    await expect(soundToggle).toHaveAttribute("aria-pressed", "true");
 
     // 2. Select target state path using Enter key
     const targetName = (
@@ -333,12 +537,12 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(toggle).toHaveAttribute("aria-label", "Mute sound");
   });
 
-  test("restart button: resets game progress, scores, and state statuses", async ({
+  test("restart button: resets game progress, scores, strikes, and state statuses", async ({
     page,
   }) => {
     await page.goto("./");
 
-    // Make one correct guess and one skip
+    // Make one correct guess
     const targetName = (
       await page.locator("#target-state-name").textContent()
     ).trim();
@@ -347,8 +551,17 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
       .dispatchEvent("click");
     await expect(page.locator("#score-count")).toHaveText("1");
 
-    await page.locator("#skip-btn").click();
-    await expect(page.locator("#current-round")).toHaveText("3");
+    // Make one wrong guess
+    const nextTarget = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(
+        `.state:not([data-name="${nextTarget}"]):not([data-status="correct"])`,
+      )
+      .first();
+    await wrongState.dispatchEvent("click");
+    await expect(page.locator("#strikes-count")).toHaveText("1 / 3");
 
     // Restart game
     await page.locator("#restart-btn").click();
@@ -356,59 +569,18 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(page.locator("#current-round")).toHaveText("1");
     await expect(page.locator("#score-count")).toHaveText("0");
     await expect(page.locator("#streak-count")).toHaveText("0");
+    await expect(page.locator("#strikes-count")).toHaveText("0 / 3");
     await expect(page.locator("#accuracy-rate")).toHaveText("100%");
 
     // Verify all states have no data-status
     const statesWithStatus = page.locator(".state[data-status]");
     await expect(statesWithStatus).toHaveCount(0);
 
-    // Verify all chips enabled
-    const chips = page.locator(".state-chip");
-    for (let i = 0; i < 8; i++) {
-      await expect(chips.nth(i)).toBeEnabled();
-      await expect(chips.nth(i)).not.toHaveAttribute("data-status", /.*/);
-    }
+    // Verify strike pips are inactive
+    const activePips = page.locator(".strike-pips .pip.active");
+    await expect(activePips).toHaveCount(0);
 
     await expect(page.locator("#status-live")).toContainText("Game restarted");
-  });
-
-  test("game completion: reaches game over modal, displays final score, and restarts game", async ({
-    page,
-  }) => {
-    await page.goto("./");
-
-    // Guess first state correctly
-    const firstTargetName = (
-      await page.locator("#target-state-name").textContent()
-    ).trim();
-    await page
-      .locator(`.state[data-name="${firstTargetName}"]`)
-      .dispatchEvent("click");
-
-    // Skip the remaining states to trigger game over
-    await page.evaluate(() => {
-      const skipBtn = document.getElementById("skip-btn");
-      while (!document.getElementById("game-over-modal").open) {
-        skipBtn.click();
-      }
-    });
-
-    const modal = page.locator("#game-over-modal");
-    await expect(modal).toBeVisible();
-    await expect(page.locator("#final-score")).toHaveText("1 / 50");
-    await expect(page.locator("#final-streak")).toHaveText("1");
-    await expect(page.locator("#target-state-name")).toHaveText("All Done!");
-    await expect(page.locator("#skip-btn")).toBeDisabled();
-
-    // Play again restarts the game
-    const playAgainBtn = page.locator("#play-again-btn");
-    await expect(playAgainBtn).toBeFocused();
-    await playAgainBtn.click();
-
-    await expect(modal).not.toHaveAttribute("open", "");
-    await expect(page.locator("#current-round")).toHaveText("1");
-    await expect(page.locator("#score-count")).toHaveText("0");
-    await expect(page.locator("#skip-btn")).toBeEnabled();
   });
 
   test("focus trap: Tab navigation cannot escape the open modal dialog to background controls", async ({
@@ -418,18 +590,12 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     test.skip(isMobile, "Tab navigation is desktop-specific");
     await page.goto("./");
 
-    await page.evaluate(() => {
-      const skipBtn = document.getElementById("skip-btn");
-      while (!document.getElementById("game-over-modal").open) {
-        skipBtn.click();
-      }
-    });
-
-    const modal = page.locator("#game-over-modal");
+    await page.locator("#leaderboard-btn").click();
+    const modal = page.locator("#leaderboard-modal");
     await expect(modal).toBeVisible();
 
-    const playAgainBtn = page.locator("#play-again-btn");
-    await expect(playAgainBtn).toBeFocused();
+    const closeBtn = page.locator("#close-leaderboard-btn");
+    await expect(closeBtn).toBeFocused();
 
     // Press Tab repeatedly: background controls must remain inert and unreachable
     for (let i = 0; i < 5; i++) {
@@ -439,7 +605,7 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
           ? document.activeElement.id || document.activeElement.tagName
           : "",
       );
-      expect(["sound-toggle", "restart-btn", "skip-btn"]).not.toContain(
+      expect(["sound-toggle", "restart-btn", "leaderboard-btn"]).not.toContain(
         activeEl,
       );
     }

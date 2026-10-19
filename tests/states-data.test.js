@@ -53,7 +53,7 @@ test("map.svg contains all 50 states matching states-data", () => {
   );
 
   const stateRegex =
-    /<path\s+id="([A-Z]{2})"\s+data-name="([^"]+)"\s+class="state"\s+role="button"\s+tabindex="0"\s+aria-label="([^"]+)"\s+d="([^"]+)">\s*<title>([^<]+)<\/title>\s*<\/path>/g;
+    /<path\s+id="([A-Z]{2})"\s+data-name="([^"]+)"\s+class="state"\s+role="button"\s+tabindex="0"\s+aria-label="([^"]+)"\s+d="([^"]+)"><\/path>/g;
 
   const matches = [...svg.matchAll(stateRegex)];
   assert.equal(
@@ -65,12 +65,18 @@ test("map.svg contains all 50 states matching states-data", () => {
   const stateMap = new Map(STATES.map((s) => [s.id, s]));
 
   for (const m of matches) {
-    const [, id, dataName, ariaLabel, d, title] = m;
+    const [, id, dataName, ariaLabel, d] = m;
     assert.ok(stateMap.has(id), `Unknown state id ${id} in SVG`);
     const expected = stateMap.get(id);
     assert.equal(dataName, expected.name, `data-name mismatch for ${id}`);
     assert.equal(ariaLabel, expected.name, `aria-label mismatch for ${id}`);
-    assert.equal(title, expected.name, `title mismatch for ${id}`);
     assert.ok(d.length > 10, `Path d looks invalid for ${id}`);
   }
+
+  // Ensure no <title> tags inside state paths (prevents hover tooltip cheating)
+  assert.equal(
+    svg.includes("<title>Alabama</title>"),
+    false,
+    "map.svg state paths must not contain <title> tags to prevent hover tooltip cheating",
+  );
 });
