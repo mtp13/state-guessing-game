@@ -118,10 +118,30 @@
         <section class="prompt-section" aria-label="Current Challenge">
           <div id="prompt-card" class="prompt-card">
             <div class="prompt-content">
-              <span class="prompt-label">Find:</span>
+              <span class="prompt-label" id="prompt-label">Find:</span>
               <strong id="target-state-name" class="prompt-target"
                 >Alabama</strong
               >
+            </div>
+            <div
+              class="prompt-completed-actions"
+              id="prompt-completed-actions"
+              hidden
+            >
+              <button
+                type="button"
+                id="view-results-btn"
+                class="btn btn-secondary btn-sm"
+              >
+                View Results
+              </button>
+              <button
+                type="button"
+                id="new-game-btn"
+                class="btn btn-primary btn-sm"
+              >
+                New Game
+              </button>
             </div>
           </div>
         </section>
@@ -973,6 +993,29 @@
           aria-labelledby="game-over-title"
         >
           <div class="modal-card">
+            <button
+              type="button"
+              id="close-game-over-btn"
+              class="modal-close-btn"
+              aria-label="Close dialog and review map"
+              title="Close"
+            >
+              <svg
+                class="icon-close"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
             <h2 id="game-over-title" class="modal-title">Map Completed!</h2>
             <p id="game-over-summary" class="modal-summary">
               Great job identifying all 50 states.
@@ -1045,6 +1088,13 @@
             <div class="modal-actions">
               <button
                 type="button"
+                id="review-map-btn"
+                class="btn btn-secondary btn-large"
+              >
+                Review Map
+              </button>
+              <button
+                type="button"
                 id="play-again-btn"
                 class="btn btn-primary btn-large"
               >
@@ -1060,6 +1110,29 @@
           aria-labelledby="leaderboard-title"
         >
           <div class="modal-card">
+            <button
+              type="button"
+              id="close-leaderboard-top-btn"
+              class="modal-close-btn"
+              aria-label="Close dialog"
+              title="Close"
+            >
+              <svg
+                class="icon-close"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
             <h2 id="leaderboard-title" class="modal-title">Top 10 Scores</h2>
             <section
               class="leaderboard-table-container"

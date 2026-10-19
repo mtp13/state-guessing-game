@@ -327,6 +327,72 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(targetState).not.toHaveAttribute("data-status", /.*/);
   });
 
+  test("gameplay: dismissing game over modal allows reviewing completed map, then starting new game", async ({
+    page,
+  }) => {
+    await page.goto("./");
+
+    // Trigger 3 strikes to open game over modal
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const targetState = page.locator(`.state[data-name="${targetName}"]`);
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    // Verify Review Map button and Close button exist
+    const reviewMapBtn = page.locator("#review-map-btn");
+    const closeBtn = page.locator("#close-game-over-btn");
+    await expect(reviewMapBtn).toBeVisible();
+    await expect(closeBtn).toBeVisible();
+
+    // Click Review Map to dismiss game over screen
+    await reviewMapBtn.click();
+    await expect(modal).not.toBeVisible();
+
+    // Map remains visible with game finished state intact
+    await expect(targetState).toHaveAttribute("data-status", "revealed");
+    await expect(page.locator("#strikes-count")).toHaveText("3 / 3");
+    await expect(page.locator("#prompt-completed-actions")).toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeVisible();
+    await expect(page.locator("#new-game-btn")).toBeVisible();
+
+    // Accessibility audit on reviewed map state
+    const reviewScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(reviewScan.violations).toEqual([]);
+
+    // Clicking View Results re-opens the game over modal
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+
+    // Dismiss via top-right close button
+    await closeBtn.click();
+    await expect(modal).not.toBeVisible();
+
+    // Dismiss via backdrop click when opened again
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+    await modal.click({ position: { x: 5, y: 5 } });
+    await expect(modal).not.toBeVisible();
+
+    // Start a new game via "New Game" button in prompt
+    await page.locator("#new-game-btn").click();
+    await expect(page.locator("#strikes-count")).toHaveText("0 / 3");
+    await expect(page.locator("#score-count")).toHaveText("0");
+    await expect(targetState).not.toHaveAttribute("data-status", /.*/);
+    await expect(page.locator("#prompt-completed-actions")).toBeHidden();
+  });
+
   test("leaderboard: name input autocomplete has datalist and saves score", async ({
     page,
   }) => {

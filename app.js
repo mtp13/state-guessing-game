@@ -592,6 +592,10 @@ function bindDomElements() {
     leaderboardBtn: document.getElementById("leaderboard-btn"),
     restartBtn: document.getElementById("restart-btn"),
     promptCard: document.getElementById("prompt-card"),
+    promptLabel: document.getElementById("prompt-label"),
+    promptCompletedActions: document.getElementById("prompt-completed-actions"),
+    viewResultsBtn: document.getElementById("view-results-btn"),
+    newGameBtn: document.getElementById("new-game-btn"),
     targetStateName: document.getElementById("target-state-name"),
     currentRound: document.getElementById("current-round"),
     totalRounds: document.getElementById("total-rounds"),
@@ -604,6 +608,8 @@ function bindDomElements() {
     progressBar: document.getElementById("progress-bar"),
     statusLive: document.getElementById("status-live"),
     gameOverModal: document.getElementById("game-over-modal"),
+    closeGameOverBtn: document.getElementById("close-game-over-btn"),
+    reviewMapBtn: document.getElementById("review-map-btn"),
     gameOverTitle: document.getElementById("game-over-title"),
     gameOverSummary: document.getElementById("game-over-summary"),
     saveScoreForm: document.getElementById("save-score-form"),
@@ -614,6 +620,9 @@ function bindDomElements() {
       "game-over-leaderboard-body",
     ),
     leaderboardModal: document.getElementById("leaderboard-modal"),
+    closeLeaderboardTopBtn: document.getElementById(
+      "close-leaderboard-top-btn",
+    ),
     leaderboardTableBody: document.getElementById("leaderboard-table-body"),
     closeLeaderboardBtn: document.getElementById("close-leaderboard-btn"),
     playAgainBtn: document.getElementById("play-again-btn"),
@@ -712,6 +721,13 @@ function render(dom, gameState, options = {}) {
       }
     }
 
+    if (dom.promptCard) {
+      dom.promptCard.setAttribute("data-completed", "true");
+    }
+    if (dom.promptCompletedActions) {
+      dom.promptCompletedActions.removeAttribute("hidden");
+    }
+
     if (!options.deferModal && dom.gameOverModal) {
       if (typeof dom.gameOverModal.showModal === "function") {
         if (!dom.gameOverModal.open) dom.gameOverModal.showModal();
@@ -720,6 +736,13 @@ function render(dom, gameState, options = {}) {
       }
     }
   } else {
+    if (dom.promptCard) {
+      dom.promptCard.removeAttribute("data-completed");
+    }
+    if (dom.promptCompletedActions) {
+      dom.promptCompletedActions.setAttribute("hidden", "");
+    }
+
     if (dom.currentRound) {
       dom.currentRound.textContent = String(gameState.currentIndex + 1);
     }
@@ -846,8 +869,30 @@ function initializeApp() {
     }
     if (qualifies && dom.playerNameInput && !dom.playerNameInput.disabled) {
       dom.playerNameInput.focus();
+    } else if (dom.reviewMapBtn) {
+      dom.reviewMapBtn.focus();
     } else if (dom.playAgainBtn) {
       dom.playAgainBtn.focus();
+    }
+  }
+
+  function closeGameOverModal() {
+    playSound("click");
+    stopConfetti(dom.confettiCanvas);
+    if (dom.gameOverModal) {
+      if (
+        typeof dom.gameOverModal.close === "function" &&
+        dom.gameOverModal.open
+      ) {
+        dom.gameOverModal.close();
+      }
+      dom.gameOverModal.setAttribute("hidden", "");
+    }
+    announceStatus("Game over dialog dismissed. Reviewing completed map.");
+    if (dom.viewResultsBtn && !dom.viewResultsBtn.hidden) {
+      dom.viewResultsBtn.focus();
+    } else if (dom.restartBtn) {
+      dom.restartBtn.focus();
     }
   }
 
@@ -1021,6 +1066,9 @@ function initializeApp() {
       }
       dom.leaderboardModal.setAttribute("hidden", "");
     }
+    if (dom.leaderboardBtn) {
+      dom.leaderboardBtn.focus();
+    }
   }
 
   async function handleSaveScore(e) {
@@ -1128,12 +1176,59 @@ function initializeApp() {
     dom.closeLeaderboardBtn.addEventListener("click", closeLeaderboardModal);
   }
 
+  if (dom.closeLeaderboardTopBtn) {
+    dom.closeLeaderboardTopBtn.addEventListener("click", closeLeaderboardModal);
+  }
+
+  if (dom.closeGameOverBtn) {
+    dom.closeGameOverBtn.addEventListener("click", closeGameOverModal);
+  }
+
+  if (dom.reviewMapBtn) {
+    dom.reviewMapBtn.addEventListener("click", closeGameOverModal);
+  }
+
+  if (dom.viewResultsBtn) {
+    dom.viewResultsBtn.addEventListener("click", () => {
+      playSound("click");
+      openGameOverModalUI();
+    });
+  }
+
+  if (dom.newGameBtn) {
+    dom.newGameBtn.addEventListener("click", handleRestart);
+  }
+
   if (dom.restartBtn) {
     dom.restartBtn.addEventListener("click", handleRestart);
   }
 
   if (dom.playAgainBtn) {
     dom.playAgainBtn.addEventListener("click", handleRestart);
+  }
+
+  if (dom.gameOverModal) {
+    dom.gameOverModal.addEventListener("click", (e) => {
+      if (e.target === dom.gameOverModal) {
+        closeGameOverModal();
+      }
+    });
+    dom.gameOverModal.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      closeGameOverModal();
+    });
+  }
+
+  if (dom.leaderboardModal) {
+    dom.leaderboardModal.addEventListener("click", (e) => {
+      if (e.target === dom.leaderboardModal) {
+        closeLeaderboardModal();
+      }
+    });
+    dom.leaderboardModal.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      closeLeaderboardModal();
+    });
   }
 
   if (dom.saveScoreForm) {
