@@ -17,3 +17,4 @@ playwright.config.*
 README.md
 deferred-review-items.md
 docs/
+.agents/

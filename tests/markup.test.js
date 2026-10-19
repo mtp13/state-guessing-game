@@ -148,3 +148,35 @@ test("manifest.webmanifest is valid and icons exist with correct dimensions", ()
   assert.equal(touchIcon.width, 180);
   assert.equal(touchIcon.height, 180);
 });
+
+function extractLayerBlock(css, name) {
+  const start = css.search(new RegExp(`@layer\\s+${name}\\s*\\{`));
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = css.indexOf("{", start); i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    else if (css[i] === "}") {
+      depth--;
+      if (depth === 0) return css.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+test("style.css declares and organizes CSS layers with reduced-motion inside utilities", () => {
+  const css = fs.readFileSync(path.join(rootDir, "style.css"), "utf8");
+
+  assert.match(
+    css,
+    /@layer\s+reset,\s*base,\s*theme,\s*components,\s*utilities;/,
+    "Expected standard CSS layer declaration",
+  );
+
+  const utilitiesLayer = extractLayerBlock(css, "utilities");
+  assert.ok(utilitiesLayer, "@layer utilities must be defined");
+  assert.match(
+    utilitiesLayer,
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)/,
+    "Reduced-motion overrides must be defined inside @layer utilities per AGENTS.md",
+  );
+});

@@ -4,3 +4,4 @@ playwright-report/
 .e2e-root/
 .vercel
 .env*
+.agents/
