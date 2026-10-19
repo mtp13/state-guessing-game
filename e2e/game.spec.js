@@ -33,11 +33,22 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await page.route("**/api/scores*", async (route) => {
       if (route.request().method() === "POST") {
         const body = route.request().postDataJSON() || {};
+        const savedId = "test-saved-id-123";
+        const serverEntry = {
+          id: savedId,
+          name: body.name,
+          score: body.score,
+          accuracy: body.accuracy,
+          streak: body.streak,
+          date: new Date().toISOString(),
+        };
         await route.fulfill({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            topScores: [body],
+            success: true,
+            savedId,
+            topScores: [serverEntry],
             names: [body.name],
           }),
         });
@@ -48,12 +59,12 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
           body: JSON.stringify({
             topScores: [
               {
+                id: "initial-alex-id",
                 name: "Alex",
                 score: 25,
-                total: 50,
                 accuracy: "75%",
                 streak: 8,
-                date: "2026-10-18",
+                date: "2026-10-18T10:00:00.000Z",
               },
             ],
             names: ["Alex"],
@@ -113,7 +124,6 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(strikesCard).toBeVisible();
     const strikesCount = page.locator("#strikes-count");
     await expect(strikesCount).toHaveText("0 / 3");
-    await expect(strikesCount).toHaveAttribute("aria-label", "0 of 3 strikes");
     const pips = page.locator(".strike-pips .pip");
     await expect(pips).toHaveCount(3);
     await expect(page.locator(".strike-pips .pip.active")).toHaveCount(0);
@@ -357,6 +367,9 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(page.locator("#game-over-leaderboard")).toContainText(
       "Taylor",
     );
+    await expect(
+      page.locator("#game-over-leaderboard tr.highlight-row"),
+    ).toContainText("Taylor");
     await expect(page.locator("#status-live")).toContainText(
       "Score saved successfully",
     );

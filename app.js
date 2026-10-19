@@ -417,7 +417,7 @@ function sortScores(scores) {
     const accB = parseAccuracyNumber(b.accuracy);
     const accA = parseAccuracyNumber(a.accuracy);
     if (accB !== accA) return accB - accA;
-    return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+    return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime();
   });
 }
 
@@ -450,10 +450,12 @@ async function fetchScores() {
     const res = await fetch("./api/scores");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const scores = Array.isArray(data)
+    const serverScores = Array.isArray(data)
       ? data
       : data.topScores || data.scores || [];
-    const sorted = sortScores(scores);
+    const localScores = getStoredScores();
+    const merged = serverScores.length > 0 ? serverScores : localScores;
+    const sorted = sortScores(merged);
     setStoredScores(sorted);
     return sorted;
   } catch {
@@ -463,6 +465,8 @@ async function fetchScores() {
 
 async function submitScore(scoreEntry) {
   let savedScores = getStoredScores();
+  let savedId = null;
+  let success = false;
   try {
     const res = await fetch("./api/scores", {
       method: "POST",
@@ -471,6 +475,8 @@ async function submitScore(scoreEntry) {
     });
     if (res.ok) {
       const data = await res.json();
+      savedId = data.savedId || null;
+      success = data.success !== false;
       const rawList =
         data.topScores || data.scores || (Array.isArray(data) ? data : null);
       if (rawList) {
@@ -480,18 +486,21 @@ async function submitScore(scoreEntry) {
       }
     } else {
       savedScores = sortScores([...savedScores, scoreEntry]);
+      success = false;
     }
   } catch {
     savedScores = sortScores([...savedScores, scoreEntry]);
+    success = false;
   }
   setStoredScores(savedScores);
-  return savedScores;
+  return { scores: savedScores, savedId, success };
 }
 
 function qualifiesForTop10(scores, currentScore) {
+  if (typeof currentScore !== "number" || currentScore < 0) return false;
   if (!scores || scores.length < 10) return true;
   const lowest = scores[scores.length - 1]?.score ?? 0;
-  return currentScore >= lowest;
+  return currentScore > lowest;
 }
 
 function updatePlayerNamesDatalist(datalistEl, scores) {
@@ -541,7 +550,10 @@ function renderLeaderboardTable(tableBody, scores, highlightIndex = -1) {
       typeof item.accuracy === "string" ? item.accuracy : `${item.accuracy}%`;
 
     const dateTd = document.createElement("td");
-    dateTd.textContent = item.date || new Date().toISOString().slice(0, 10);
+    const rawDate = item.date
+      ? String(item.date).slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+    dateTd.textContent = rawDate;
 
     tr.appendChild(rankTd);
     tr.appendChild(nameTd);
@@ -603,9 +615,13 @@ function render(dom, gameState, options = {}) {
 
   if (dom.progressBar) {
     dom.progressBar.max = total;
-    dom.progressBar.value = gameState.completed
-      ? total
-      : gameState.currentIndex;
+    if (gameState.completed && gameState.gameOverReason === "three_strikes") {
+      dom.progressBar.value = gameState.score;
+    } else if (gameState.completed) {
+      dom.progressBar.value = total;
+    } else {
+      dom.progressBar.value = gameState.currentIndex;
+    }
   }
 
   // Update strikes count and pips
@@ -613,10 +629,6 @@ function render(dom, gameState, options = {}) {
   const maxStrikes = gameState.maxWrongGuesses || 3;
   if (dom.strikesCount) {
     dom.strikesCount.textContent = `${strikes} / ${maxStrikes}`;
-    dom.strikesCount.setAttribute(
-      "aria-label",
-      `${strikes} of ${maxStrikes} strikes`,
-    );
   }
   if (dom.strikePips) {
     dom.strikePips.forEach((pip, idx) => {
@@ -640,7 +652,12 @@ function render(dom, gameState, options = {}) {
   }
 
   if (gameState.completed) {
-    if (dom.currentRound) dom.currentRound.textContent = String(total);
+    if (dom.currentRound) {
+      dom.currentRound.textContent =
+        gameState.gameOverReason === "three_strikes"
+          ? String(Math.min(gameState.currentIndex + 1, total))
+          : String(total);
+    }
     if (dom.targetStateName) {
       dom.targetStateName.textContent =
         gameState.gameOverReason === "three_strikes"
@@ -804,10 +821,14 @@ function initializeApp() {
       }
     }
     renderLeaderboardTable(dom.gameOverLeaderboardBody, currentLeaderboard);
+    dom.gameOverModal.removeAttribute("hidden");
     if (typeof dom.gameOverModal.showModal === "function") {
       if (!dom.gameOverModal.open) dom.gameOverModal.showModal();
-    } else {
-      dom.gameOverModal.removeAttribute("hidden");
+    }
+    if (qualifies && dom.playerNameInput && !dom.playerNameInput.disabled) {
+      dom.playerNameInput.focus();
+    } else if (dom.playAgainBtn) {
+      dom.playAgainBtn.focus();
     }
   }
 
@@ -961,10 +982,9 @@ function initializeApp() {
     playSound("click");
     renderLeaderboardTable(dom.leaderboardTableBody, currentLeaderboard);
     if (dom.leaderboardModal) {
+      dom.leaderboardModal.removeAttribute("hidden");
       if (typeof dom.leaderboardModal.showModal === "function") {
         if (!dom.leaderboardModal.open) dom.leaderboardModal.showModal();
-      } else {
-        dom.leaderboardModal.removeAttribute("hidden");
       }
       if (dom.closeLeaderboardBtn) dom.closeLeaderboardBtn.focus();
     }
@@ -978,9 +998,8 @@ function initializeApp() {
         dom.leaderboardModal.open
       ) {
         dom.leaderboardModal.close();
-      } else {
-        dom.leaderboardModal.setAttribute("hidden", "");
       }
+      dom.leaderboardModal.setAttribute("hidden", "");
     }
   }
 
@@ -1011,18 +1030,20 @@ function initializeApp() {
       date: new Date().toISOString(),
     };
 
-    currentLeaderboard = await submitScore(scoreEntry);
+    const result = await submitScore(scoreEntry);
+    currentLeaderboard = result.scores;
     cachedBestScore = getBestScore(currentLeaderboard);
     if (dom.bestScore) dom.bestScore.textContent = String(cachedBestScore);
     updatePlayerNamesDatalist(dom.playerNamesList, currentLeaderboard);
 
-    // Find rank of newly added score
-    const newIdx = currentLeaderboard.findIndex(
-      (s) =>
-        s.name === scoreEntry.name &&
-        s.score === scoreEntry.score &&
-        s.date === scoreEntry.date,
-    );
+    // Find rank of newly added score (matching savedId or name+score)
+    const newIdx = currentLeaderboard.findIndex((s) => {
+      if (result.savedId && s.id) {
+        return s.id === result.savedId;
+      }
+      return s.name === scoreEntry.name && s.score === scoreEntry.score;
+    });
+
     renderLeaderboardTable(
       dom.gameOverLeaderboardBody,
       currentLeaderboard,
@@ -1034,10 +1055,17 @@ function initializeApp() {
       newIdx,
     );
 
-    if (dom.submitScoreBtn) {
-      dom.submitScoreBtn.textContent = "Saved!";
+    if (newIdx !== -1) {
+      if (dom.submitScoreBtn) {
+        dom.submitScoreBtn.textContent = "Saved!";
+      }
+      announceStatus("Score saved successfully to top 10 leaderboard!");
+    } else {
+      if (dom.submitScoreBtn) {
+        dom.submitScoreBtn.textContent = "Recorded";
+      }
+      announceStatus("Score recorded, but did not qualify for the top 10.");
     }
-    announceStatus("Score saved successfully to top 10 leaderboard!");
   }
 
   // Event Listeners

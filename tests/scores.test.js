@@ -285,6 +285,24 @@ test("validateScoreEntry rejects invalid score, accuracy, or streak", () => {
     }),
     null,
   );
+  assert.equal(
+    validateScoreEntry({
+      name: "Bob",
+      score: 51,
+      accuracy: 100,
+      streak: 50,
+    }),
+    null,
+  );
+  assert.equal(
+    validateScoreEntry({
+      name: "Bob",
+      score: 10,
+      accuracy: 50,
+      streak: 15,
+    }),
+    null,
+  );
   assert.equal(validateScoreEntry(null), null);
   assert.equal(validateScoreEntry("not-an-object"), null);
 });

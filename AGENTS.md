@@ -77,12 +77,13 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 
 ## Deployment
 
-- The site is hosted on **Vercel** as a static site.
+- The site is hosted on **Vercel** with static frontend assets plus a serverless scoring endpoint (`api/scores.js`).
 - Production is `https://mike.pullen.dev/state-guessing-game/`, proxied from this Vercel project by the hub site (`mtp13/mike.pullen.dev`). Previews serve the app from `/`.
 - All paths must stay relative (`./`, `style.css`). Never use root-anchored paths (`/…`) or a `<base>` tag so the app works both at a domain root and in a subfolder.
 - Playwright runs every test both at the root and in a `/state-guessing-game/` subfolder.
 - Vercel previews are behind login protection, so headers and `.vercelignore` can only be checked with `curl` against production after merging.
-- `.vercelignore` excludes `package.json`, `package-lock.json`, tests, docs and tooling configs so Vercel deploys only the app's runtime files and skips `npm install`. `package.json` also has no `build` script, and no build script should be added.
+- `.vercelignore` excludes `package.json`, `package-lock.json`, tests, docs and tooling configs so Vercel deploys only the app's runtime files and skips `npm install`. `package.json` also has no `build` script, and no build script should be added. Note: `api/` must **never** be added to `.vercelignore`.
+- Serverless storage uses Vercel Blob with static read-write token (`SCORES_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN`). In local dev without `vercel dev` (e.g. `python3 -m http.server`), client falls back smoothly to `localStorage`.
 - If you add a new tooling or config file, add it to `.vercelignore` so it isn't served. Never commit secrets.
 - Security headers (strict CSP, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) and cache rules (`max-age=0, must-revalidate` on `index.html` and `manifest.webmanifest`) live in `vercel.json`. Don't put workarounds in `app.js`.
 

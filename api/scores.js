@@ -87,10 +87,12 @@ function validateScoreEntry(entry) {
   const sanitizedName = entry.name.replace(/<[^>]*>/g, "").trim();
   if (sanitizedName.length < 1 || sanitizedName.length > 25) return null;
 
+  const MAX_SCORE = 50;
   if (
     typeof entry.score !== "number" ||
     !Number.isFinite(entry.score) ||
-    entry.score < 0
+    entry.score < 0 ||
+    entry.score > MAX_SCORE
   ) {
     return null;
   }
@@ -98,7 +100,8 @@ function validateScoreEntry(entry) {
   if (
     typeof entry.streak !== "number" ||
     !Number.isFinite(entry.streak) ||
-    entry.streak < 0
+    entry.streak < 0 ||
+    entry.streak > entry.score
   ) {
     return null;
   }
@@ -178,6 +181,7 @@ async function parseBody(req) {
     return req.body;
   }
   if (typeof req.body === "string" && req.body.length > 0) {
+    if (req.body.length > 16384) return null;
     try {
       return JSON.parse(req.body);
     } catch {
@@ -189,10 +193,17 @@ async function parseBody(req) {
   }
   return new Promise((resolve) => {
     let raw = "";
+    let tooLarge = false;
     req.on("data", (chunk) => {
       raw += chunk;
+      if (raw.length > 16384) {
+        tooLarge = true;
+      }
     });
     req.on("end", () => {
+      if (tooLarge) {
+        return resolve(null);
+      }
       try {
         resolve(raw ? JSON.parse(raw) : {});
       } catch {
@@ -211,7 +222,7 @@ async function parseBody(req) {
  */
 async function fetchBlobScores(token) {
   try {
-    const listRes = await fetch("https://blob.vercel-storage.com/?limit=10", {
+    const listRes = await fetch("https://blob.vercel-storage.com/?limit=50", {
       headers: {
         authorization: `Bearer ${token}`,
         "x-api-version": "7",
@@ -233,7 +244,11 @@ async function fetchBlobScores(token) {
       return { topScores: [], names: [] };
     }
 
-    const contentRes = await fetch(scoreBlob.url);
+    const contentRes = await fetch(scoreBlob.url, {
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
     if (!contentRes.ok) {
       return { topScores: [], names: [] };
     }
@@ -269,10 +284,15 @@ async function uploadBlobScores(token, topScores, names) {
       authorization: `Bearer ${token}`,
       "x-api-version": "7",
       "content-type": "application/json",
+      "x-add-random-suffix": "0",
+      "x-allow-overwrite": "1",
     },
     body: payload,
   });
-  return res.ok;
+  if (!res.ok) {
+    throw new Error(`Blob upload failed: status ${res.status}`);
+  }
+  return true;
 }
 
 /**
@@ -332,7 +352,12 @@ async function handler(req, res) {
       ]);
       memoryStore.topScores = topScores;
       memoryStore.names = names;
-      return sendJson(res, 200, { success: true, topScores, names });
+      return sendJson(res, 200, {
+        success: true,
+        topScores,
+        names,
+        savedId: id,
+      });
     }
 
     const current = await fetchBlobScores(token);
@@ -343,9 +368,14 @@ async function handler(req, res) {
       validated.name,
     ]);
 
-    await uploadBlobScores(token, topScores, names);
+    try {
+      await uploadBlobScores(token, topScores, names);
+    } catch (err) {
+      console.error("scores: blob write failed", err);
+      return sendJson(res, 502, { error: "Could not save score" });
+    }
 
-    return sendJson(res, 200, { success: true, topScores, names });
+    return sendJson(res, 200, { success: true, topScores, names, savedId: id });
   }
 
   res.setHeader("Allow", "GET, POST, OPTIONS");

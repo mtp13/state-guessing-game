@@ -313,7 +313,7 @@
 
   .pip.active,
   .pip[data-active="true"] {
-    background-color: #ef4444;
+    background-color: var(--status-incorrect);
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
   }
 
@@ -449,11 +449,16 @@
   }
 
   .state[data-status="revealed"] {
-    fill: #f59e0b;
+    fill: var(--status-skipped);
     stroke: #fef08a;
     stroke-width: 2.5;
     animation: pulse-revealed 1.2s infinite ease-in-out;
     cursor: default;
+  }
+
+  .state[data-status="revealed"]:focus-visible {
+    stroke: var(--focus-ring);
+    stroke-width: 3.5;
   }
 
   /* Non-state boundary lines inside SVG */
