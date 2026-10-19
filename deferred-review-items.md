@@ -4,6 +4,12 @@ Findings raised by the automated PR review (MiniMax via OpenCode) and user feedb
 
 ---
 
+## Resolved in PR #3
+
+- **D-15 — Mobile button text sizing on iPhone**: RESOLVED. Refined `.icon-btn` typography (`font-size: 0.8125rem`, `padding: 0.4375rem 0.625rem`, `gap: 0.3125rem`, with 20x20px SVG icons and `white-space: nowrap`), ensuring Sound, Restart, and Scores action buttons fit cleanly without clipping or overflow on iPhone 14 (390px) down to 320px screens with $\ge 44 \times 44\text{px}$ touch targets maintained. Stacked header layout at $\le 640\text{px}$ centers buttons and title cleanly.
+
+---
+
 ## Resolved in PR #2
 
 The following items raised during PR #2 reviews were resolved prior to merge:
@@ -18,7 +24,7 @@ The following items raised during PR #2 reviews were resolved prior to merge:
 
 ---
 
-## PR #2 — Deferred Items (Future Consideration)
+## Deferred Items (Future Consideration)
 
 ### Moderate / Minor
 
@@ -70,8 +76,8 @@ The following items raised during PR #2 reviews were resolved prior to merge:
 - **Impact:** Currently pinned to API version 7 (`x-api-version: 7`).
 - **Do:** Modernize to API version 10+ with `PUT /?pathname=...` and verify against live credentials.
 
-#### D-15 — Mobile button text sizing on iPhone
+#### D-16 — Component media queries in `@layer components`
 
-- **Where:** `style.css` — `.header-actions .icon-btn .btn-text`.
-- **Impact:** User reported: "The text for sound and restart buttons is too large for the buttons on the iPhone. Keep this for the next round of changes."
-- **Do:** Adjust responsive font sizing or hide text labels at narrow mobile breakpoints (`@media (max-width: 480px)`) in the next round of styling changes.
+- **Where:** `style.css` — `@media (max-width: 640px)`.
+- **Impact:** Component responsive overrides are currently in `@layer utilities`.
+- **Do:** Nest `@media (max-width: 640px)` component rules directly inside `@layer components` and keep only utilities/reduced-motion in `@layer utilities`.
