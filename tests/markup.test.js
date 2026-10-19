@@ -1,0 +1,143 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const rootDir = path.resolve(__dirname, "..");
+
+function readPngHeader(filePath) {
+  const buf = fs.readFileSync(filePath);
+  assert.equal(buf.toString("ascii", 12, 16), "IHDR");
+  return {
+    width: buf.readUInt32BE(16),
+    height: buf.readUInt32BE(20),
+    colorType: buf.readUInt8(25),
+  };
+}
+
+test("index.html contains required semantic structure, controls, and IDs", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+
+  assert.match(html, /<!doctype html>/i);
+  assert.match(html, /<html\s+lang="en">/);
+  assert.match(html, /viewport-fit=cover/);
+  assert.match(html, /id="sound-toggle"/);
+  assert.match(html, /id="restart-btn"/);
+  assert.match(html, /id="prompt-card"/);
+  assert.match(html, /id="target-state-name"/);
+  assert.match(html, /id="skip-btn"/);
+  assert.match(html, /id="current-round"/);
+  assert.match(html, /id="total-rounds"/);
+  assert.match(html, /id="score-count"/);
+  assert.match(html, /id="streak-count"/);
+  assert.match(html, /id="accuracy-rate"/);
+  assert.match(html, /id="progress-bar"/);
+  assert.match(html, /<progress\s+id="progress-bar"/);
+  assert.match(html, /id="status-live"/);
+  assert.match(html, /aria-live="polite"/);
+  assert.match(html, /id="game-over-modal"/);
+  assert.match(html, /id="play-again-btn"/);
+  assert.match(html, /id="confetti-canvas"/);
+});
+
+test("index.html inline SVG contains all 50 state paths matching states-data.js", () => {
+  const { STATES } = require("../states-data.js");
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  for (const state of STATES) {
+    assert.match(
+      html,
+      new RegExp(
+        `id="${state.id}"[\\s\\S]*?data-name="${state.name}"|data-name="${state.name}"[\\s\\S]*?id="${state.id}"`,
+      ),
+      `Expected state ${state.id} (${state.name}) in index.html`,
+    );
+  }
+});
+
+test("keeps every in-page href and src relative (no root-anchored paths)", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  const refs = [...html.matchAll(/\b(?:href|src)="([^"]*)"/g)].map((m) => m[1]);
+
+  assert.ok(refs.length > 0, "Must have href/src references");
+  for (const ref of refs) {
+    assert.ok(!ref.startsWith("/"), `Root-anchored path found: ${ref}`);
+  }
+});
+
+test("referenced static assets exist on disk", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  const refs = [...html.matchAll(/\b(?:href|src)="([^"]*)"/g)].map((m) => m[1]);
+
+  for (const ref of refs) {
+    if (ref.startsWith("http://") || ref.startsWith("https://")) continue;
+    const cleanPath = ref.split("?")[0].split("#")[0];
+    const assetPath = path.join(rootDir, cleanPath);
+    assert.ok(
+      fs.existsSync(assetPath),
+      `Referenced file missing: ${cleanPath}`,
+    );
+  }
+});
+
+test("no inline scripts, styles, or on* handlers in HTML", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+
+  // No inline style attributes
+  assert.doesNotMatch(html, /\sstyle="/i, "No inline style attributes allowed");
+
+  // No <style> tags
+  assert.doesNotMatch(
+    html,
+    /<style\b[^>]*>/i,
+    "No inline <style> tags allowed",
+  );
+
+  // No inline event handlers like onclick=, onkeydown=
+  assert.doesNotMatch(
+    html,
+    /\son[a-z]+="/i,
+    "No inline on* event handlers allowed",
+  );
+
+  // No inline scripts: every <script> must have src="..."
+  const scriptTags = [
+    ...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi),
+  ];
+  for (const [, attrs, content] of scriptTags) {
+    assert.match(attrs, /\bsrc="/, "Every <script> must have a src attribute");
+    assert.equal(content.trim(), "", "No inline script content allowed");
+  }
+});
+
+test("manifest.webmanifest is valid and icons exist with correct dimensions", () => {
+  const raw = fs.readFileSync(
+    path.join(rootDir, "manifest.webmanifest"),
+    "utf8",
+  );
+  const manifest = JSON.parse(raw);
+
+  assert.equal(manifest.name, "US State Guessing Game");
+  assert.equal(manifest.start_url, "./");
+  assert.equal(manifest.display, "standalone");
+  assert.ok(Array.isArray(manifest.icons) && manifest.icons.length >= 3);
+  assert.ok(
+    manifest.icons.some((icon) => icon.purpose === "maskable"),
+    "Expected at least one maskable icon entry",
+  );
+
+  for (const icon of manifest.icons) {
+    const iconPath = path.join(rootDir, icon.src);
+    assert.ok(fs.existsSync(iconPath), `Missing icon file: ${icon.src}`);
+    const { width, height } = readPngHeader(iconPath);
+    assert.equal(
+      `${width}x${height}`,
+      icon.sizes,
+      `Size mismatch for ${icon.src}`,
+    );
+  }
+
+  // iOS apple-touch-icon must be 180x180
+  const touchIcon = readPngHeader(path.join(rootDir, "icon-180.png"));
+  assert.equal(touchIcon.width, 180);
+  assert.equal(touchIcon.height, 180);
+});
