@@ -7,6 +7,9 @@ const {
   extractUniqueNames,
   validateScoreEntry,
   isTopScore,
+  selectPrunableSnapshots,
+  fetchBlobScores,
+  uploadBlobScores,
   _resetMemoryStore,
 } = handler;
 
@@ -451,5 +454,135 @@ test("handler parses stream body if req.body is undefined", async () => {
   } finally {
     if (oldScoresToken) process.env.SCORES_READ_WRITE_TOKEN = oldScoresToken;
     if (oldBlobToken) process.env.BLOB_READ_WRITE_TOKEN = oldBlobToken;
+  }
+});
+
+test("selectPrunableSnapshots retains keep newest snapshots and prunes older ones", () => {
+  const now = 2000;
+  const blobs = [
+    { pathname: "scores-2000.json", url: "https://blob/scores-2000.json" },
+    { pathname: "scores-1900.json", url: "https://blob/scores-1900.json" },
+    { pathname: "scores-1800.json", url: "https://blob/scores-1800.json" },
+    { pathname: "scores-1500.json", url: "https://blob/scores-1500.json" },
+  ];
+
+  // With keep=2: 2000 and 1900 retained. 1800 and 1500 are older than now (2000) -> pruned
+  const prunable = selectPrunableSnapshots(blobs, now, 2);
+  assert.deepEqual(prunable, [
+    "https://blob/scores-1800.json",
+    "https://blob/scores-1500.json",
+  ]);
+});
+
+test("selectPrunableSnapshots handles random suffix in pathname", () => {
+  const now = 3000;
+  const blobs = [
+    {
+      pathname: "scores-3000-abc123_.json",
+      url: "https://blob/scores-3000-abc123_.json",
+    },
+    {
+      pathname: "scores-2500-def456.json",
+      url: "https://blob/scores-2500-def456.json",
+    },
+    {
+      pathname: "scores-1000-xyz.json",
+      url: "https://blob/scores-1000-xyz.json",
+    },
+  ];
+
+  const prunable = selectPrunableSnapshots(blobs, now, 2);
+  assert.deepEqual(prunable, ["https://blob/scores-1000-xyz.json"]);
+});
+
+test("selectPrunableSnapshots ignores non-snapshot files and future timestamps", () => {
+  const now = 2000;
+  const blobs = [
+    { pathname: "scores.json", url: "https://blob/scores.json" },
+    { pathname: "scores-2500.json", url: "https://blob/scores-2500.json" }, // Future write from concurrent node
+    { pathname: "scores-2000.json", url: "https://blob/scores-2000.json" },
+    { pathname: "scores-1900.json", url: "https://blob/scores-1900.json" },
+    { pathname: "scores-1000.json", url: "https://blob/scores-1000.json" },
+  ];
+
+  // 2500 and 2000 are the 2 freshest.
+  // 1900 and 1000 are candidate older snapshots (< 2000)
+  const prunable = selectPrunableSnapshots(blobs, now, 2);
+  assert.deepEqual(prunable, [
+    "https://blob/scores-1900.json",
+    "https://blob/scores-1000.json",
+  ]);
+});
+
+test("selectPrunableSnapshots returns empty on empty or invalid inputs", () => {
+  assert.deepEqual(selectPrunableSnapshots([], 1000), []);
+  assert.deepEqual(selectPrunableSnapshots(null, 1000), []);
+  assert.deepEqual(selectPrunableSnapshots(undefined, 1000), []);
+});
+
+test("fetchBlobScores returns ok:false and error message when list API fails", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 500,
+  });
+
+  try {
+    const res = await fetchBlobScores("mock-token");
+    assert.equal(res.ok, false);
+    assert.deepEqual(res.topScores, []);
+    assert.ok(res.error.includes("500"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchBlobScores returns ok:true with empty array when no blobs exist", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ blobs: [] }),
+  });
+
+  try {
+    const res = await fetchBlobScores("mock-token");
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.topScores, []);
+    assert.deepEqual(res.names, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handler returns 502 on GET/POST when Blob storage read fails", async () => {
+  const oldScoresToken = process.env.SCORES_READ_WRITE_TOKEN;
+  process.env.SCORES_READ_WRITE_TOKEN = "mock-token";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+  });
+
+  try {
+    // 1. GET returns 502
+    const getReq = createMockReq({ method: "GET" });
+    const getRes = createMockRes();
+    await handler(getReq, getRes);
+    assert.equal(getRes.statusCode, 502);
+    assert.equal(getRes.body.error, "Could not read leaderboard");
+
+    // 2. POST returns 502 without modifying or writing
+    const postReq = createMockReq({
+      method: "POST",
+      body: { name: "Sam", score: 20, accuracy: 80, streak: 3 },
+    });
+    const postRes = createMockRes();
+    await handler(postReq, postRes);
+    assert.equal(postRes.statusCode, 502);
+    assert.equal(postRes.body.error, "Could not read leaderboard");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldScoresToken) process.env.SCORES_READ_WRITE_TOKEN = oldScoresToken;
+    else delete process.env.SCORES_READ_WRITE_TOKEN;
   }
 });

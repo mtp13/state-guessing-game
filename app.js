@@ -410,15 +410,33 @@ function parseAccuracyNumber(acc) {
 
 function sortScores(scores) {
   if (!Array.isArray(scores)) return [];
-  return [...scores].sort((a, b) => {
-    if ((b.score || 0) !== (a.score || 0)) {
-      return (b.score || 0) - (a.score || 0);
-    }
-    const accB = parseAccuracyNumber(b.accuracy);
-    const accA = parseAccuracyNumber(a.accuracy);
-    if (accB !== accA) return accB - accA;
-    return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime();
-  });
+  return scores
+    .filter((s) => s && typeof s === "object")
+    .sort((a, b) => {
+      const scoreA = Number(a.score) || 0;
+      const scoreB = Number(b.score) || 0;
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+      const accB = parseAccuracyNumber(b.accuracy);
+      const accA = parseAccuracyNumber(a.accuracy);
+      if (accB !== accA) return accB - accA;
+      return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime();
+    });
+}
+
+function addScoreEntry(list, entry) {
+  const filtered = (Array.isArray(list) ? list : []).filter(
+    (item) =>
+      item &&
+      !(
+        (entry.id && item.id === entry.id) ||
+        (item.name === entry.name &&
+          item.score === entry.score &&
+          item.date === entry.date)
+      ),
+  );
+  return sortScores([...filtered, entry]);
 }
 
 function getStoredScores() {
@@ -476,20 +494,20 @@ async function submitScore(scoreEntry) {
     if (res.ok) {
       const data = await res.json();
       savedId = data.savedId || null;
-      success = data.success !== false;
+      success = data.success === true;
       const rawList =
         data.topScores || data.scores || (Array.isArray(data) ? data : null);
       if (rawList) {
         savedScores = sortScores(rawList);
       } else {
-        savedScores = sortScores([...savedScores, scoreEntry]);
+        savedScores = addScoreEntry(savedScores, scoreEntry);
       }
     } else {
-      savedScores = sortScores([...savedScores, scoreEntry]);
+      savedScores = addScoreEntry(savedScores, scoreEntry);
       success = false;
     }
   } catch {
-    savedScores = sortScores([...savedScores, scoreEntry]);
+    savedScores = addScoreEntry(savedScores, scoreEntry);
     success = false;
   }
   setStoredScores(savedScores);
@@ -792,6 +810,7 @@ function initializeApp() {
   const statesList = typeof STATES !== "undefined" ? STATES : [];
   let gameState = createGameState(statesList);
   let strikeTimeoutId = null;
+  let activePendingScore = null;
 
   function announceStatus(message) {
     if (dom.statusLive) {
@@ -953,6 +972,7 @@ function initializeApp() {
     }
 
     gameState = createGameState(statesList);
+    activePendingScore = null;
     render(dom, gameState);
     const firstTarget = gameState.queue ? gameState.queue[0] : null;
     const firstName = firstTarget ? firstTarget.name : "";
@@ -1021,25 +1041,38 @@ function initializeApp() {
     }
 
     const total = gameState.queue ? gameState.queue.length : 50;
-    const scoreEntry = {
-      name,
-      score: gameState.score,
-      total,
-      accuracy: calculateAccuracy(gameState.score, gameState.attempts),
-      streak: gameState.maxStreak || 0,
-      date: new Date().toISOString(),
-    };
+    if (!activePendingScore || activePendingScore.score !== gameState.score) {
+      activePendingScore = {
+        id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        score: gameState.score,
+        total,
+        accuracy: calculateAccuracy(gameState.score, gameState.attempts),
+        streak: gameState.maxStreak || 0,
+        date: new Date().toISOString(),
+      };
+    } else {
+      activePendingScore.name = name;
+    }
 
+    const scoreEntry = activePendingScore;
     const result = await submitScore(scoreEntry);
+    if (result.success) {
+      activePendingScore = null;
+    }
+
     currentLeaderboard = result.scores;
     cachedBestScore = getBestScore(currentLeaderboard);
     if (dom.bestScore) dom.bestScore.textContent = String(cachedBestScore);
     updatePlayerNamesDatalist(dom.playerNamesList, currentLeaderboard);
 
-    // Find rank of newly added score (matching savedId or name+score)
+    // Find rank of newly added score (matching savedId or entry id or name+score)
     const newIdx = currentLeaderboard.findIndex((s) => {
       if (result.savedId && s.id) {
         return s.id === result.savedId;
+      }
+      if (scoreEntry.id && s.id === scoreEntry.id) {
+        return true;
       }
       return (
         result.success &&

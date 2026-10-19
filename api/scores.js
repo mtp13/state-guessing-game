@@ -214,11 +214,51 @@ async function parseBody(req) {
   });
 }
 
+const SNAPSHOT_RE = /^scores-(\d+)(?:-[A-Za-z0-9_-]+)?\.json$/;
+
+/**
+ * Extracts numeric timestamp from a blob pathname or uploadedAt field.
+ *
+ * @param {Object} blob - Blob object with pathname and optional uploadedAt
+ * @returns {number}
+ */
+function extractSnapshotTimestamp(blob) {
+  if (!blob) return 0;
+  const match = (blob.pathname || "").match(SNAPSHOT_RE);
+  if (match && match[1]) {
+    return Number(match[1]);
+  }
+  return new Date(blob.uploadedAt || 0).getTime() || 0;
+}
+
+/**
+ * Selects URLs of prunable snapshots, retaining at least `keep` most recent
+ * snapshots and only selecting snapshots strictly older than `now`.
+ *
+ * @param {Array} blobs - List of blob objects
+ * @param {number} now - Timestamp threshold
+ * @param {number} [keep=2] - Minimum number of recent snapshots to retain
+ * @returns {string[]} Array of URLs to prune
+ */
+function selectPrunableSnapshots(blobs, now, keep = 2) {
+  if (!Array.isArray(blobs)) return [];
+
+  const snapshots = blobs
+    .filter((b) => SNAPSHOT_RE.test(b.pathname || ""))
+    .sort((a, b) => extractSnapshotTimestamp(b) - extractSnapshotTimestamp(a));
+
+  return snapshots
+    .slice(keep)
+    .filter((b) => extractSnapshotTimestamp(b) < now)
+    .map((b) => b.url)
+    .filter(Boolean);
+}
+
 /**
  * Fetches existing scores and names from Vercel Blob storage.
  *
  * @param {string} token - Vercel Blob read/write token
- * @returns {Promise<{ topScores: Array, names: Array }>}
+ * @returns {Promise<{ ok: boolean, topScores: Array, names: Array, error?: string }>}
  */
 async function fetchBlobScores(token) {
   try {
@@ -232,19 +272,25 @@ async function fetchBlobScores(token) {
       },
     );
     if (!listRes.ok) {
-      return { topScores: [], names: [] };
+      return {
+        ok: false,
+        topScores: [],
+        names: [],
+        error: `Blob list failed: status ${listRes.status}`,
+      };
     }
     const listData = await listRes.json();
     const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
     const matching = blobs
-      .filter((b) => b.pathname.startsWith("scores"))
+      .filter((b) => SNAPSHOT_RE.test(b.pathname || ""))
       .sort(
-        (a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0),
+        (a, b) => extractSnapshotTimestamp(b) - extractSnapshotTimestamp(a),
       );
 
     const scoreBlob = matching[0];
     if (!scoreBlob || !scoreBlob.url) {
-      return { topScores: [], names: [] };
+      // Clean empty store
+      return { ok: true, topScores: [], names: [] };
     }
 
     const contentRes = await fetch(scoreBlob.url, {
@@ -253,7 +299,12 @@ async function fetchBlobScores(token) {
       },
     });
     if (!contentRes.ok) {
-      return { topScores: [], names: [] };
+      return {
+        ok: false,
+        topScores: [],
+        names: [],
+        error: `Blob fetch failed: status ${contentRes.status}`,
+      };
     }
     const data = await contentRes.json();
     const rawScores = data.topScores || data.scores || [];
@@ -261,9 +312,14 @@ async function fetchBlobScores(token) {
     const names = Array.isArray(data.names)
       ? extractUniqueNames(data.names)
       : extractUniqueNames(topScores);
-    return { topScores, names };
-  } catch {
-    return { topScores: [], names: [] };
+    return { ok: true, topScores, names };
+  } catch (err) {
+    return {
+      ok: false,
+      topScores: [],
+      names: [],
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -289,6 +345,8 @@ async function uploadBlobScores(token, topScores, names) {
     headers: {
       authorization: `Bearer ${token}`,
       "x-api-version": "7",
+      "x-add-random-suffix": "0",
+      "x-content-type": "application/json",
       "content-type": "application/json",
     },
     body: payload,
@@ -297,7 +355,7 @@ async function uploadBlobScores(token, topScores, names) {
     throw new Error(`Blob upload failed: status ${res.status}`);
   }
 
-  // Safe cleanup: always retain at least the 2 freshest snapshots,
+  // Safe cleanup: retain at least the 2 freshest snapshots,
   // and only delete older snapshots strictly prior to this write.
   try {
     const listRes = await fetch(
@@ -312,22 +370,10 @@ async function uploadBlobScores(token, topScores, names) {
     if (listRes.ok) {
       const listData = await listRes.json();
       const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
-      const snapshots = blobs
-        .filter((b) => /^scores-\d+\.json$/.test(b.pathname))
-        .sort(
-          (a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0),
-        );
-
-      const oldBlobs = snapshots
-        .slice(2)
-        .filter((b) => {
-          const m = b.pathname.match(/^scores-(\d+)\.json$/);
-          return m && Number(m[1]) < now;
-        })
-        .map((b) => b.url);
+      const oldBlobs = selectPrunableSnapshots(blobs, now, 2);
 
       if (oldBlobs.length > 0) {
-        await fetch("https://blob.vercel-storage.com/delete", {
+        const delRes = await fetch("https://blob.vercel-storage.com/delete", {
           method: "POST",
           headers: {
             authorization: `Bearer ${token}`,
@@ -336,10 +382,13 @@ async function uploadBlobScores(token, topScores, names) {
           },
           body: JSON.stringify({ urls: oldBlobs }),
         });
+        if (!delRes.ok) {
+          console.warn(`scores: prune failed with status ${delRes.status}`);
+        }
       }
     }
-  } catch {
-    // Ignore cleanup errors
+  } catch (err) {
+    console.warn("scores: cleanup error", err);
   }
 
   return true;
@@ -372,8 +421,15 @@ async function handler(req, res) {
       });
     }
 
-    const { topScores, names } = await fetchBlobScores(token);
-    return sendJson(res, 200, { topScores, names });
+    const result = await fetchBlobScores(token);
+    if (!result.ok) {
+      console.error("scores: fetchBlobScores failed on GET", result.error);
+      return sendJson(res, 502, { error: "Could not read leaderboard" });
+    }
+    return sendJson(res, 200, {
+      topScores: result.topScores,
+      names: result.names,
+    });
   }
 
   if (req.method === "POST") {
@@ -411,6 +467,11 @@ async function handler(req, res) {
     }
 
     const current = await fetchBlobScores(token);
+    if (!current.ok) {
+      console.error("scores: fetchBlobScores failed on POST", current.error);
+      return sendJson(res, 502, { error: "Could not read leaderboard" });
+    }
+
     const topScores = sortTopScores([...current.topScores, newEntry], 10);
     const names = extractUniqueNames([
       ...current.names,
@@ -438,4 +499,7 @@ module.exports.sortTopScores = sortTopScores;
 module.exports.extractUniqueNames = extractUniqueNames;
 module.exports.validateScoreEntry = validateScoreEntry;
 module.exports.isTopScore = isTopScore;
+module.exports.selectPrunableSnapshots = selectPrunableSnapshots;
+module.exports.fetchBlobScores = fetchBlobScores;
+module.exports.uploadBlobScores = uploadBlobScores;
 module.exports._resetMemoryStore = _resetMemoryStore;

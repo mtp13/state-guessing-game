@@ -381,10 +381,9 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await page.route("**/api/scores*", async (route) => {
       if (route.request().method() === "POST") {
         await route.fulfill({
-          status: 200,
+          status: 502,
           contentType: "application/json",
           body: JSON.stringify({
-            success: false,
             error: "Could not save score",
           }),
         });
@@ -422,6 +421,55 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(submitBtn).not.toBeDisabled();
     await expect(page.locator("#status-live")).toContainText(
       "Could not save score",
+    );
+
+    // Browser logs "Failed to load resource: the server responded with a status of 502" to console on 502
+    consoleErrors = consoleErrors.filter((msg) => !msg.includes("502"));
+  });
+
+  test("leaderboard: score that does not qualify for top 10 hides save form", async ({
+    page,
+  }) => {
+    const fullTop10 = Array.from({ length: 10 }, (_, i) => ({
+      id: `score_${i + 1}`,
+      name: `Player ${i + 1}`,
+      score: 50 - i, // 50 down to 41
+      accuracy: 100,
+      streak: 50 - i,
+      date: new Date(2026, 0, i + 1).toISOString(),
+    }));
+
+    await page.route("**/api/scores*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          topScores: fullTop10,
+          names: fullTop10.map((s) => s.name),
+        }),
+      });
+    });
+
+    await page.goto("./");
+
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    // Since player scored 0 and top 10 lowest is 41, save form must be hidden
+    await expect(page.locator("#save-score-form")).toBeHidden();
+    await expect(page.locator("#game-over-leaderboard")).toBeVisible();
+    await expect(page.locator("#game-over-leaderboard")).toContainText(
+      "Player 1",
     );
   });
 
