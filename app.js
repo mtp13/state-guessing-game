@@ -475,6 +475,83 @@ function startConfetti(canvas) {
    ========================================================================== */
 
 const STORAGE_KEY = "state_game_high_scores";
+const NAMES_STORAGE_KEY = "state_game_player_names";
+const LEADERBOARD_TIMEZONE = "America/Chicago";
+
+function getDayKey(dateInput = new Date(), timeZone = LEADERBOARD_TIMEZONE) {
+  if (dateInput === null || dateInput === undefined || dateInput === "") {
+    return "";
+  }
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
+function filterTodayScores(
+  scores,
+  now = new Date(),
+  timeZone = LEADERBOARD_TIMEZONE,
+) {
+  if (!Array.isArray(scores)) return [];
+  const todayKey = getDayKey(now, timeZone);
+  if (!todayKey) return [];
+  return scores.filter(
+    (s) =>
+      s && typeof s === "object" && getDayKey(s.date, timeZone) === todayKey,
+  );
+}
+
+function mergeUniqueNames(...lists) {
+  const seen = new Map();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      const raw = typeof item === "string" ? item : item?.name;
+      if (typeof raw !== "string") continue;
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const lower = trimmed.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.set(lower, trimmed);
+      }
+    }
+  }
+  return Array.from(seen.values()).sort(
+    (a, b) =>
+      a.localeCompare(b, "en", { sensitivity: "base" }) || a.localeCompare(b),
+  );
+}
+
+function getStoredNames() {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(NAMES_STORAGE_KEY);
+    return raw ? mergeUniqueNames(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setStoredNames(names) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(
+      NAMES_STORAGE_KEY,
+      JSON.stringify(mergeUniqueNames(names)),
+    );
+  } catch {
+    // Ignore storage quota/block
+  }
+}
 
 function parseAccuracyNumber(acc) {
   if (typeof acc === "number") return acc;
@@ -517,7 +594,11 @@ function getStoredScores() {
   if (typeof localStorage === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    setStoredNames(mergeUniqueNames(getStoredNames(), parsed));
+    return filterTodayScores(parsed);
   } catch {
     return [];
   }
@@ -527,6 +608,9 @@ function setStoredScores(scores) {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+    if (Array.isArray(scores) && scores.length > 0) {
+      setStoredNames(mergeUniqueNames(getStoredNames(), scores));
+    }
   } catch {
     // Ignore storage quota/block
   }
@@ -542,11 +626,22 @@ async function fetchScores() {
     const res = await fetch("./api/scores");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    const hasExplicitScores =
+      Array.isArray(data) ||
+      Array.isArray(data?.topScores) ||
+      Array.isArray(data?.scores);
     const serverScores = Array.isArray(data)
       ? data
       : data.topScores || data.scores || [];
+    if (Array.isArray(data?.names)) {
+      setStoredNames(mergeUniqueNames(getStoredNames(), data.names));
+    }
     const localScores = getStoredScores();
-    const merged = serverScores.length > 0 ? serverScores : localScores;
+    const merged = hasExplicitScores
+      ? serverScores
+      : serverScores.length > 0
+        ? serverScores
+        : localScores;
     const sorted = sortScores(merged);
     setStoredScores(sorted);
     return sorted;
@@ -559,6 +654,9 @@ async function submitScore(scoreEntry) {
   let savedScores = getStoredScores();
   let savedId = null;
   let success = false;
+  if (scoreEntry?.name) {
+    setStoredNames(mergeUniqueNames(getStoredNames(), [scoreEntry.name]));
+  }
   try {
     const res = await fetch("./api/scores", {
       method: "POST",
@@ -569,6 +667,9 @@ async function submitScore(scoreEntry) {
       const data = await res.json();
       savedId = data.savedId || null;
       success = data.success === true;
+      if (Array.isArray(data?.names)) {
+        setStoredNames(mergeUniqueNames(getStoredNames(), data.names));
+      }
       const rawList =
         data.topScores || data.scores || (Array.isArray(data) ? data : null);
       if (rawList) {
@@ -597,13 +698,19 @@ function qualifiesForTop10(scores, currentScore) {
 
 function updatePlayerNamesDatalist(datalistEl, scores) {
   if (!datalistEl) return;
-  const names = Array.from(new Set(scores.map((s) => s.name).filter(Boolean)));
+  const names = mergeUniqueNames(getStoredNames(), scores);
   datalistEl.textContent = "";
   names.forEach((name) => {
     const opt = document.createElement("option");
     opt.value = name;
     datalistEl.appendChild(opt);
   });
+}
+
+function formatLocalDate(value) {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toLocaleDateString();
 }
 
 function renderLeaderboardTable(tableBody, scores, highlightIndex = -1) {
@@ -642,10 +749,7 @@ function renderLeaderboardTable(tableBody, scores, highlightIndex = -1) {
       typeof item.accuracy === "string" ? item.accuracy : `${item.accuracy}%`;
 
     const dateTd = document.createElement("td");
-    const rawDate = item.date
-      ? String(item.date).slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
-    dateTd.textContent = rawDate;
+    dateTd.textContent = formatLocalDate(item.date);
 
     tr.appendChild(rankTd);
     tr.appendChild(nameTd);
@@ -1174,7 +1278,7 @@ function initializeApp() {
       }
       const qualifies = qualifiesForTop10(currentLeaderboard, gameState.score);
       if (dom.saveScoreForm) {
-        if (qualifies) {
+        if (qualifies && !gameState.scoreSaved) {
           dom.saveScoreForm.removeAttribute("hidden");
           if (dom.submitScoreBtn) {
             dom.submitScoreBtn.disabled = false;
@@ -1439,6 +1543,7 @@ function initializeApp() {
     const result = await submitScore(scoreEntry);
     if (result.success) {
       activePendingScore = null;
+      gameState.scoreSaved = true;
     }
 
     currentLeaderboard = result.scores;
@@ -1672,6 +1777,9 @@ if (typeof module !== "undefined" && module.exports) {
     skipCurrentState,
     calculateAccuracy,
     checkNewPracticeBest,
+    formatLocalDate,
+    getDayKey,
+    filterTodayScores,
     getPracticeBestScore,
     initializeApp,
     bindDomElements,

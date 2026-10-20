@@ -456,6 +456,13 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(page.locator("#status-live")).toContainText(
       "Score saved successfully",
     );
+
+    // Issue #6: after saving, reviewing results must not allow saving again
+    await page.locator("#review-map-btn").click();
+    await expect(modal).not.toBeVisible();
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+    await expect(page.locator("#save-score-form")).toBeHidden();
   });
 
   test("leaderboard: server failure enables Retry and does not claim Saved", async ({
