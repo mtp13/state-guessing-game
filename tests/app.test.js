@@ -504,3 +504,21 @@ test("formatLocalDate renders a local date string and tolerates bad input", () =
   assert.equal(typeof formatLocalDate("not-a-date"), "string");
   assert.equal(typeof formatLocalDate(undefined), "string");
 });
+
+test("client filterTodayScores filters scores by America/Chicago calendar day", () => {
+  const { getDayKey, filterTodayScores } = require("../app.js");
+  const prevDay = "2026-10-20T04:00:00.000Z"; // 23:00 CDT on Oct 19
+  const sameDay = "2026-10-20T06:00:00.000Z"; // 01:00 CDT on Oct 20
+  assert.equal(getDayKey(prevDay), "2026-10-19");
+  assert.equal(getDayKey(sameDay), "2026-10-20");
+
+  const filtered = filterTodayScores(
+    [
+      { name: "Old", score: 45, date: prevDay },
+      { name: "Today", score: 40, date: sameDay },
+    ],
+    new Date("2026-10-20T15:00:00.000Z"),
+  );
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].name, "Today");
+});
