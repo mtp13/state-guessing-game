@@ -6,6 +6,10 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Run Tests

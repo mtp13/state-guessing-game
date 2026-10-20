@@ -227,3 +227,13 @@ test("index.html contains HUD stat cards for both strikes and guesses", () => {
   assert.match(html, /id="guesses-count"/, "Guesses count must exist");
   assert.match(html, /id="best-score"/, "Best score element must exist");
 });
+
+test("vercel.json deploys only master (branch names with / need **, not *)", () => {
+  const config = JSON.parse(
+    fs.readFileSync(path.join(rootDir, "vercel.json"), "utf8"),
+  );
+  assert.deepEqual(config.git?.deploymentEnabled, {
+    master: true,
+    "**": false,
+  });
+});
