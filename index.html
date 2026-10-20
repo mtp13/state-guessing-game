@@ -31,6 +31,33 @@
           <div class="header-branding">
             <h1 class="app-title">US State Guessing Game</h1>
           </div>
+          <div class="mode-selector-wrapper">
+            <div class="mode-toggle" role="radiogroup" aria-label="Game Mode">
+              <!-- [html-validate-disable-block prefer-native-element] -->
+              <button
+                type="button"
+                role="radio"
+                id="mode-challenge-btn"
+                class="mode-btn"
+                aria-checked="true"
+                tabindex="0"
+                data-mode="challenge"
+              >
+                Challenge
+              </button>
+              <button
+                type="button"
+                role="radio"
+                id="mode-practice-btn"
+                class="mode-btn"
+                aria-checked="false"
+                tabindex="-1"
+                data-mode="practice"
+              >
+                Practice
+              </button>
+            </div>
+          </div>
           <div class="header-actions">
             <button
               type="button"
@@ -118,7 +145,7 @@
         <section class="prompt-section" aria-label="Current Challenge">
           <div id="prompt-card" class="prompt-card">
             <div class="prompt-content">
-              <span class="prompt-label" id="prompt-label">Find:</span>
+              <span class="prompt-label">Find:</span>
               <strong id="target-state-name" class="prompt-target"
                 >Alabama</strong
               >
@@ -167,6 +194,10 @@
                 <span class="pip"></span>
               </div>
             </div>
+            <div class="stat-card" id="guesses-card" hidden>
+              <span class="stat-label">Guesses</span>
+              <span id="guesses-count" class="stat-value">0</span>
+            </div>
             <div class="stat-card">
               <span class="stat-label">Score</span>
               <span id="score-count" class="stat-value">0</span>
@@ -175,8 +206,8 @@
               <span class="stat-label">Streak</span>
               <span id="streak-count" class="stat-value">0</span>
             </div>
-            <div class="stat-card">
-              <span class="stat-label">Best</span>
+            <div class="stat-card" id="best-card">
+              <span class="stat-label" id="best-label">Best</span>
               <span id="best-score" class="stat-value">0</span>
             </div>
             <div class="stat-card">
@@ -1036,6 +1067,12 @@
               </div>
             </div>
 
+            <div
+              id="practice-best-banner"
+              class="practice-best-banner"
+              hidden
+            ></div>
+
             <form id="save-score-form" class="save-score-form">
               <label for="player-name" class="form-label"
                 >Enter your name for the Top 10:</label
@@ -1064,6 +1101,7 @@
             </form>
 
             <section
+              id="game-over-leaderboard-section"
               class="leaderboard-table-container"
               tabindex="0"
               aria-label="Top 10 High Scores"

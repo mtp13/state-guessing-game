@@ -7,6 +7,7 @@ const {
   evaluateGuess,
   skipCurrentState,
   calculateAccuracy,
+  checkNewPracticeBest,
 } = require("../app.js");
 
 test("shuffleStates produces a new shuffled array without mutating input", () => {
@@ -237,4 +238,261 @@ test("calculateAccuracy handles edge cases and precision correctly", () => {
   assert.equal(calculateAccuracy(1, 3), "33%");
   assert.equal(calculateAccuracy(2, 3), "67%");
   assert.equal(calculateAccuracy(0, 5), "0%");
+});
+
+test("createGameState initializes practice mode state with proper defaults", () => {
+  const game = createGameState(STATES, null, { mode: "practice" });
+  assert.equal(game.mode, "practice");
+  assert.equal(game.states.length, 50);
+  assert.equal(game.queue.length, 50);
+  assert.equal(game.currentIndex, 0);
+  assert.equal(game.score, 0);
+  assert.equal(game.attempts, 0);
+  assert.equal(game.guesses, 0);
+  assert.equal(game.streak, 0);
+  assert.equal(game.maxStreak, 0);
+  assert.equal(game.strikes, 0);
+  assert.equal(game.wrongGuesses, 0);
+  assert.equal(game.maxWrongGuesses, null);
+  assert.equal(game.revealedStateId, null);
+  assert.equal(game.gameOverReason, null);
+  assert.equal(game.completed, false);
+  assert.deepEqual(game.history, {});
+});
+
+test("createGameState supports flexible arguments for options and modes", () => {
+  // 1. Default invocation
+  const defaultGame = createGameState(STATES);
+  assert.equal(defaultGame.mode, "challenge");
+  assert.equal(defaultGame.maxWrongGuesses, 3);
+  assert.equal(defaultGame.guesses, 0);
+
+  // 2. Options passed as 2nd parameter object
+  const practiceDirect = createGameState(STATES, { mode: "practice" });
+  assert.equal(practiceDirect.mode, "practice");
+  assert.equal(practiceDirect.queue.length, 50);
+  assert.equal(practiceDirect.maxWrongGuesses, null);
+
+  // 3. String mode passed as 2nd parameter
+  const practiceString = createGameState(STATES, "practice");
+  assert.equal(practiceString.mode, "practice");
+  assert.equal(practiceString.maxWrongGuesses, null);
+
+  // 4. Custom queue with string mode
+  const custom = [STATES[0]];
+  const customPractice = createGameState(STATES, custom, "practice");
+  assert.equal(customPractice.mode, "practice");
+  assert.equal(customPractice.queue.length, 1);
+
+  // 5. Invalid mode string or object defaults to challenge
+  const invalidModeGame = createGameState(STATES, null, { mode: "unknown" });
+  assert.equal(invalidModeGame.mode, "challenge");
+  assert.equal(invalidModeGame.maxWrongGuesses, 3);
+});
+
+test("practice mode: multiple wrong guesses increment attempts and guesses without strikes or elimination", () => {
+  const mockQueue = [
+    { id: "FL", name: "Florida" },
+    { id: "NY", name: "New York" },
+  ];
+  const game = createGameState(STATES, mockQueue, { mode: "practice" });
+
+  // 1st wrong guess
+  const res1 = evaluateGuess(game, "GA");
+  assert.equal(res1.isCorrect, false);
+  assert.equal(game.attempts, 1);
+  assert.equal(game.guesses, 1);
+  assert.equal(game.strikes, 0, "Strikes must remain 0 in practice mode");
+  assert.equal(game.currentIndex, 0, "Queue must not advance on wrong guess");
+  assert.equal(game.completed, false);
+  assert.equal(game.history["FL"], undefined);
+
+  // 2nd wrong guess
+  const res2 = evaluateGuess(game, "AL");
+  assert.equal(res2.isCorrect, false);
+  assert.equal(game.attempts, 2);
+  assert.equal(game.guesses, 2);
+  assert.equal(game.strikes, 0);
+  assert.equal(game.currentIndex, 0);
+  assert.equal(game.completed, false);
+
+  // 3rd wrong guess - MUST NOT trigger 3-strikes game over or reveal state
+  const res3 = evaluateGuess(game, "NC");
+  assert.equal(res3.isCorrect, false);
+  assert.equal(game.attempts, 3);
+  assert.equal(game.guesses, 3);
+  assert.equal(
+    game.strikes,
+    0,
+    "3rd miss in practice mode must never give a strike",
+  );
+  assert.equal(
+    game.completed,
+    false,
+    "3rd miss in practice mode must not end game",
+  );
+  assert.equal(game.gameOverReason, null);
+  assert.equal(game.revealedStateId, null);
+  assert.equal(game.history["FL"], undefined);
+
+  // 4th wrong guess - proves unlimited attempts
+  const res4 = evaluateGuess(game, "SC");
+  assert.equal(res4.isCorrect, false);
+  assert.equal(game.attempts, 4);
+  assert.equal(game.guesses, 4);
+  assert.equal(game.strikes, 0);
+  assert.equal(game.completed, false);
+
+  // 5th attempt is correct
+  const res5 = evaluateGuess(game, "FL");
+  assert.equal(res5.isCorrect, true);
+  assert.equal(game.score, 1);
+  assert.equal(game.attempts, 5);
+  assert.equal(game.guesses, 5);
+  assert.equal(game.streak, 1);
+  assert.equal(game.currentIndex, 1);
+  assert.equal(game.completed, false);
+  assert.deepEqual(game.history["FL"], {
+    status: "correct",
+    attempts: 1,
+    skipped: false,
+  });
+});
+
+test("practice mode: finding all queue states marks game completed without strikes", () => {
+  const mockQueue = [
+    { id: "TX", name: "Texas" },
+    { id: "CA", name: "California" },
+  ];
+  const game = createGameState(STATES, mockQueue, { mode: "practice" });
+
+  evaluateGuess(game, "FL"); // 1 wrong
+  evaluateGuess(game, "TX"); // 1 correct
+  assert.equal(game.completed, false);
+  assert.equal(game.currentIndex, 1);
+
+  evaluateGuess(game, "NV"); // 1 wrong on CA
+  evaluateGuess(game, "CA"); // 2 correct
+  assert.equal(game.completed, true);
+  assert.equal(game.score, 2);
+  assert.equal(game.attempts, 4);
+  assert.equal(game.guesses, 4);
+  assert.equal(game.gameOverReason, "completed");
+  assert.equal(game.revealedStateId, null);
+  assert.equal(game.strikes, 0);
+});
+
+test("calculateAccuracy accurately handles practice mode repeat attempt ratios", () => {
+  // 50 states found on first try (50/50)
+  assert.equal(calculateAccuracy(50, 50), "100%");
+  // 50 states found with 15 misses (50/65 = 76.9% -> 77%)
+  assert.equal(calculateAccuracy(50, 65), "77%");
+  // 50 states found with 50 misses (50/100 = 50%)
+  assert.equal(calculateAccuracy(50, 100), "50%");
+  // 50 states found with 100 misses (50/150 = 33.3% -> 33%)
+  assert.equal(calculateAccuracy(50, 150), "33%");
+});
+
+test("checkNewPracticeBest correctly compares personal best fewest guesses", () => {
+  // Initial runs without prior best
+  assert.deepEqual(checkNewPracticeBest(null, 58), {
+    isNewBest: true,
+    bestGuesses: 58,
+  });
+  assert.deepEqual(checkNewPracticeBest(undefined, 52), {
+    isNewBest: true,
+    bestGuesses: 52,
+  });
+  assert.deepEqual(checkNewPracticeBest("", 50), {
+    isNewBest: true,
+    bestGuesses: 50,
+  });
+  assert.deepEqual(checkNewPracticeBest("not_a_number", 50), {
+    isNewBest: true,
+    bestGuesses: 50,
+  });
+
+  // Prior numeric best of 60
+  assert.deepEqual(checkNewPracticeBest(60, 55), {
+    isNewBest: true,
+    bestGuesses: 55,
+  });
+  assert.deepEqual(checkNewPracticeBest(60, 65), {
+    isNewBest: false,
+    bestGuesses: 60,
+  });
+  assert.deepEqual(checkNewPracticeBest(60, 60), {
+    isNewBest: false,
+    bestGuesses: 60,
+  });
+
+  // Prior string best from localStorage (e.g. "60")
+  assert.deepEqual(checkNewPracticeBest("60", 55), {
+    isNewBest: true,
+    bestGuesses: 55,
+  });
+  assert.deepEqual(checkNewPracticeBest("60", 65), {
+    isNewBest: false,
+    bestGuesses: 60,
+  });
+  assert.deepEqual(checkNewPracticeBest("60", 60), {
+    isNewBest: false,
+    bestGuesses: 60,
+  });
+});
+
+test("skipCurrentState correctly tracks guesses and sets gameOverReason on completion", () => {
+  const mockQueue = [
+    { id: "RI", name: "Rhode Island" },
+    { id: "DE", name: "Delaware" },
+  ];
+  const game = createGameState(STATES, mockQueue, { mode: "practice" });
+
+  const res1 = skipCurrentState(game);
+  assert.equal(res1.targetState.id, "RI");
+  assert.equal(game.attempts, 1);
+  assert.equal(game.guesses, 1);
+  assert.equal(game.completed, false);
+
+  const res2 = skipCurrentState(game);
+  assert.equal(res2.targetState.id, "DE");
+  assert.equal(game.attempts, 2);
+  assert.equal(game.guesses, 2);
+  assert.equal(game.completed, true);
+  assert.equal(game.gameOverReason, "completed");
+
+  // Skip after completed returns null
+  assert.equal(skipCurrentState(game), null);
+});
+
+test("evaluateGuess returns safe result when game is already completed", () => {
+  const game = createGameState(STATES, [{ id: "TX", name: "Texas" }]);
+  evaluateGuess(game, "TX");
+  assert.equal(game.completed, true);
+
+  const result = evaluateGuess(game, "CA");
+  assert.equal(result.isCorrect, false);
+  assert.equal(result.targetState, null);
+  assert.equal(result.selectedState, null);
+  assert.equal(result.gameState, game);
+});
+
+test("challenge mode explicitly requested preserves 3 strikes elimination", () => {
+  const mockQueue = [
+    { id: "TX", name: "Texas" },
+    { id: "CA", name: "California" },
+  ];
+  const game = createGameState(STATES, mockQueue, { mode: "challenge" });
+  assert.equal(game.mode, "challenge");
+  assert.equal(game.maxWrongGuesses, 3);
+
+  evaluateGuess(game, "FL");
+  assert.equal(game.strikes, 1);
+  evaluateGuess(game, "NY");
+  assert.equal(game.strikes, 2);
+  evaluateGuess(game, "WA");
+  assert.equal(game.strikes, 3);
+  assert.equal(game.completed, true);
+  assert.equal(game.gameOverReason, "three_strikes");
+  assert.equal(game.revealedStateId, "TX");
 });
