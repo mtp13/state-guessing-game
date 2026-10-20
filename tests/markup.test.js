@@ -185,3 +185,45 @@ test("style.css declares and organizes CSS layers with reduced-motion inside uti
     "Reduced-motion overrides must be defined inside @layer utilities per AGENTS.md",
   );
 });
+
+test("index.html does not contain unused prompt-label id but retains prompt-label class", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  assert.doesNotMatch(
+    html,
+    /id="prompt-label"/,
+    'Unused id="prompt-label" must be removed per R4',
+  );
+  assert.match(
+    html,
+    /class="[^"]*prompt-label[^"]*"/,
+    "Visual class .prompt-label must be preserved for label styling",
+  );
+});
+
+test("index.html contains accessible game mode selector controls", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  assert.match(
+    html,
+    /(?:role="radiogroup"|class="[^"]*mode-selector[^"]*")/i,
+    "Expected accessible mode selector radiogroup or container",
+  );
+  assert.match(
+    html,
+    /id="mode-challenge|data-mode="challenge"/i,
+    "Expected Challenge mode option",
+  );
+  assert.match(
+    html,
+    /id="mode-practice|data-mode="practice"/i,
+    "Expected Practice mode option",
+  );
+});
+
+test("index.html contains HUD stat cards for both strikes and guesses", () => {
+  const html = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
+  assert.match(html, /id="strikes-card"/, "Strikes card must exist");
+  assert.match(html, /id="strikes-count"/, "Strikes count must exist");
+  assert.match(html, /id="guesses-card"/, "Guesses card must exist");
+  assert.match(html, /id="guesses-count"/, "Guesses count must exist");
+  assert.match(html, /id="best-score"/, "Best score element must exist");
+});

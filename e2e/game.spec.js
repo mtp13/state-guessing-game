@@ -796,4 +796,356 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
       }
     }
   });
+
+  test("mode selector: switches between Challenge and Practice modes and persists to localStorage", async ({
+    page,
+  }) => {
+    await page.goto("./");
+
+    const challengeBtn = page.locator(
+      "#mode-challenge-btn, [data-mode='challenge']",
+    );
+    const practiceBtn = page.locator(
+      "#mode-practice-btn, [data-mode='practice']",
+    );
+
+    await expect(challengeBtn).toBeVisible();
+    await expect(practiceBtn).toBeVisible();
+    await expect(challengeBtn).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#strikes-card")).toBeVisible();
+
+    // Switch to Practice mode
+    await practiceBtn.click();
+    await expect(practiceBtn).toHaveAttribute("aria-checked", "true");
+    await expect(challengeBtn).toHaveAttribute("aria-checked", "false");
+
+    // Verify HUD adapts: strikes card hidden, guesses displayed
+    await expect(page.locator("#strikes-card")).toBeHidden();
+    await expect(page.locator("#guesses-card")).toBeVisible();
+    await expect(page.locator("#guesses-count")).toHaveText("0");
+
+    // Check localStorage persistence
+    const savedMode = await page.evaluate(() =>
+      localStorage.getItem("state_game_mode"),
+    );
+    expect(savedMode).toBe("practice");
+
+    // Reload page and assert persistence
+    await page.reload();
+    await expect(practiceBtn).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#strikes-card")).toBeHidden();
+    await expect(page.locator("#guesses-card")).toBeVisible();
+  });
+
+  test("mode selector: prompts confirmation when switching modes mid-game and cleanly resets state on confirm", async ({
+    page,
+  }) => {
+    await page.goto("./");
+
+    // 1. Fresh game switch: switching when idle (attempts === 0) switches immediately without dialog
+    let idleDialogTriggered = false;
+    const idleHandler = (d) => {
+      idleDialogTriggered = true;
+      d.accept();
+    };
+    page.on("dialog", idleHandler);
+    await page.locator("#mode-practice-btn, [data-mode='practice']").click();
+    expect(idleDialogTriggered).toBe(false);
+    page.off("dialog", idleHandler);
+
+    // 2. Play 1 move in Practice mode (attempts > 0)
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+    await expect(page.locator("#guesses-count")).toHaveText("1");
+
+    // 3. Switch back to Challenge mid-game: User Cancels
+    let dialogMessage = "";
+    page.once("dialog", async (dialog) => {
+      dialogMessage = dialog.message();
+      await dialog.dismiss();
+    });
+    await page.locator("#mode-challenge-btn, [data-mode='challenge']").click();
+    expect(dialogMessage.length).toBeGreaterThan(0);
+
+    // Mode remains practice, progress preserved
+    await expect(
+      page.locator("#mode-practice-btn, [data-mode='practice']"),
+    ).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#guesses-count")).toHaveText("1");
+
+    // 4. Switch back to Challenge mid-game: User Confirms
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+    await page.locator("#mode-challenge-btn, [data-mode='challenge']").click();
+
+    // State reset cleanly in Challenge mode
+    await expect(
+      page.locator("#mode-challenge-btn, [data-mode='challenge']"),
+    ).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#strikes-card")).toBeVisible();
+    await expect(page.locator("#strikes-count")).toHaveText("0 / 3");
+    await expect(page.locator("#score-count")).toHaveText("0");
+    await expect(page.locator(".state[data-status]")).toHaveCount(0);
+  });
+
+  test("practice mode gameplay: incorrect guesses increment guesses counter without strikes and keep target active", async ({
+    page,
+  }) => {
+    await page.goto("./");
+    await page.locator("#mode-practice-btn, [data-mode='practice']").click();
+
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState1 = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+    const wrongName1 = await wrongState1.getAttribute("data-name");
+
+    // Wrong guess 1
+    await wrongState1.dispatchEvent("click");
+    await expect(page.locator("#guesses-count")).toHaveText("1");
+    await expect(page.locator("#target-state-name")).toHaveText(targetName);
+    await expect(page.locator("#status-live")).toContainText(
+      `Incorrect. That was ${wrongName1}`,
+    );
+    await expect(page.locator("#game-over-modal")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+
+    // Wrong guesses 2, 3, 4 (demonstrates 3-strikes elimination is completely disabled)
+    const wrongState2 = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .nth(1);
+    await wrongState2.dispatchEvent("click");
+    await wrongState1.dispatchEvent("click");
+    await wrongState2.dispatchEvent("click");
+
+    await expect(page.locator("#guesses-count")).toHaveText("4");
+    await expect(page.locator("#game-over-modal")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await expect(page.locator("#target-state-name")).toHaveText(targetName);
+
+    // Correct guess advances round and updates accuracy
+    const correctState = page.locator(`.state[data-name="${targetName}"]`);
+    await correctState.dispatchEvent("click");
+
+    await expect(page.locator("#score-count")).toHaveText("1");
+    await expect(page.locator("#guesses-count")).toHaveText("5");
+    await expect(page.locator("#current-round")).toHaveText("2");
+    await expect(page.locator("#accuracy-rate")).toHaveText("20%"); // 1 / 5 = 20%
+    await expect(correctState).toHaveAttribute("data-status", "correct");
+  });
+
+  test("practice mode completion: locating all 50 states displays completion modal, updates personal best, and strictly suppresses leaderboard", async ({
+    page,
+  }) => {
+    // Pre-seed personal best to 60 guesses
+    await page.addInitScript(() => {
+      localStorage.setItem("state_game_mode", "practice");
+      localStorage.setItem("state_game_practice_best_guesses", "60");
+    });
+    await page.goto("./");
+
+    // Verify HUD shows initial personal best
+    await expect(page.locator("#best-score")).toHaveText("60");
+
+    let scoresApiCalled = false;
+    page.on("request", (req) => {
+      if (req.url().includes("/api/scores") && req.method() !== "GET")
+        scoresApiCalled = true;
+    });
+
+    // Make 1 wrong guess first, so total guesses = 51
+    const firstTarget = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${firstTarget}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+
+    // Identify all 50 states correctly
+    for (let round = 1; round <= 50; round++) {
+      const target = (
+        await page.locator("#target-state-name").textContent()
+      ).trim();
+      await page
+        .locator(`.state[data-name="${target}"]`)
+        .dispatchEvent("click");
+    }
+
+    // Completion modal opens
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+    await expect(page.locator("#game-over-title")).toHaveText("Map Completed!");
+    await expect(page.locator("#game-over-summary")).toContainText(
+      "all 50 states",
+    );
+
+    // Stats: 51 guesses, 98% accuracy (50/51)
+    await expect(
+      page.locator("#final-guesses, #final-score, .modal-stats"),
+    ).toContainText("51");
+    await expect(page.locator("#final-accuracy")).toHaveText("98%");
+
+    // Strictly NO online leaderboard or save score form
+    await expect(page.locator("#save-score-form")).toBeHidden();
+    await expect(page.locator("#game-over-leaderboard-section")).toBeHidden();
+    expect(scoresApiCalled).toBe(false);
+
+    // New personal best recorded in localStorage
+    const savedBest = await page.evaluate(() =>
+      localStorage.getItem("state_game_practice_best_guesses"),
+    );
+    expect(savedBest).toBe("51");
+  });
+
+  test("practice mode: dismissing completion modal allows reviewing map with View Results and New Game actions", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("state_game_mode", "practice");
+    });
+    await page.goto("./");
+
+    // Fast-track completing all 50 states
+    for (let round = 1; round <= 50; round++) {
+      const target = (
+        await page.locator("#target-state-name").textContent()
+      ).trim();
+      await page
+        .locator(`.state[data-name="${target}"]`)
+        .dispatchEvent("click");
+    }
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    // Dismiss via Review Map button
+    await page.locator("#review-map-btn").click();
+    await expect(modal).not.toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeFocused();
+
+    // Map review state: all 50 states correct
+    await expect(page.locator('.state[data-status="correct"]')).toHaveCount(50);
+    await expect(page.locator("#prompt-completed-actions")).toBeVisible();
+
+    // Re-open results
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+
+    // Dismiss via Escape
+    await page.keyboard.press("Escape");
+    await expect(modal).not.toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeFocused();
+
+    // Start New Game
+    await page.locator("#new-game-btn").click();
+    await expect(page.locator("#current-round")).toHaveText("1");
+    await expect(page.locator("#guesses-count")).toHaveText("0");
+    await expect(page.locator('.state[data-status="correct"]')).toHaveCount(0);
+    await expect(page.locator("#prompt-completed-actions")).toBeHidden();
+  });
+
+  test("modal dialog: sticky close button stays pinned within card during scrolling", async ({
+    page,
+  }) => {
+    const fullTop10 = Array.from({ length: 10 }, (_, i) => ({
+      id: `score_${i + 1}`,
+      name: `Player ${i + 1}`,
+      score: 50 - i,
+      accuracy: 100,
+      streak: 50 - i,
+      date: new Date(2026, 0, i + 1).toISOString(),
+    }));
+
+    await page.route("**/api/scores*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          topScores: fullTop10,
+          names: fullTop10.map((s) => s.name),
+        }),
+      });
+    });
+
+    await page.goto("./");
+    await page.locator("#leaderboard-btn").click();
+    const modal = page.locator("#leaderboard-modal");
+    await expect(modal).toBeVisible();
+
+    const closeBtn = page.locator("#close-leaderboard-top-btn");
+    await expect(closeBtn).toBeVisible();
+
+    const modalCard = modal.locator(".modal-card");
+    const initialCardBox = await modalCard.boundingBox();
+    const initialCloseBox = await closeBtn.boundingBox();
+    expect(initialCloseBox).not.toBeNull();
+    expect(initialCardBox).not.toBeNull();
+
+    // Scroll card content down
+    await modalCard.evaluate((el) => {
+      el.scrollTop = 200;
+    });
+
+    const scrolledCardBox = await modalCard.boundingBox();
+    const scrolledCloseBox = await closeBtn.boundingBox();
+    expect(scrolledCloseBox).not.toBeNull();
+
+    // Verify sticky positioning keeps button pinned near the top of the card
+    // Button must remain inside the top portion of the modal card
+    expect(scrolledCloseBox.y).toBeGreaterThanOrEqual(scrolledCardBox.y);
+    expect(scrolledCloseBox.y).toBeLessThanOrEqual(scrolledCardBox.y + 60);
+
+    // Button remains clickable while scrolled and dismisses dialog
+    await closeBtn.click();
+    await expect(modal).not.toHaveAttribute("open", "");
+  });
+
+  test("accessibility: zero axe violations across practice mode states and mode selector", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("state_game_mode", "practice");
+    });
+    await page.goto("./");
+
+    // 1. Practice initial state audit
+    const initialScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(initialScan.violations).toEqual([]);
+
+    // 2. Practice mid-game (after 1 wrong guess)
+    const target = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrongState = page
+      .locator(`.state:not([data-name="${target}"])`)
+      .first();
+    await wrongState.dispatchEvent("click");
+
+    const midGameScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(midGameScan.violations).toEqual([]);
+
+    // 3. Mode selector switch audit
+    await page.locator("#mode-challenge-btn, [data-mode='challenge']").click();
+    const challengeScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(challengeScan.violations).toEqual([]);
+  });
 });
