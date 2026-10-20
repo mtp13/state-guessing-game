@@ -43,7 +43,12 @@ test("index.html contains required semantic structure, controls, and IDs", () =>
   assert.match(html, /id="status-live"/);
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /id="game-over-modal"/);
+  assert.match(html, /id="close-game-over-btn"/);
+  assert.match(html, /id="review-map-btn"/);
   assert.match(html, /id="play-again-btn"/);
+  assert.match(html, /id="view-results-btn"/);
+  assert.match(html, /id="new-game-btn"/);
+  assert.match(html, /id="close-leaderboard-top-btn"/);
   assert.match(html, /id="confetti-canvas"/);
 });
 

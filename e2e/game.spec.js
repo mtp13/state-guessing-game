@@ -327,6 +327,89 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(targetState).not.toHaveAttribute("data-status", /.*/);
   });
 
+  test("gameplay: dismissing game over modal allows reviewing completed map, then starting new game", async ({
+    page,
+  }) => {
+    await page.goto("./");
+
+    // Trigger 3 strikes to open game over modal
+    const targetName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const targetState = page.locator(`.state[data-name="${targetName}"]`);
+    const wrongState = page
+      .locator(`.state:not([data-name="${targetName}"])`)
+      .first();
+
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+    await wrongState.dispatchEvent("click");
+
+    const modal = page.locator("#game-over-modal");
+    await expect(modal).toBeVisible();
+
+    // Verify Review Map button and Close button exist and are visible
+    const reviewMapBtn = page.locator("#review-map-btn");
+    const closeBtn = page.locator("#close-game-over-btn");
+    await expect(reviewMapBtn).toBeVisible();
+    await expect(closeBtn).toBeVisible();
+
+    // The sticky close button is within the viewport
+    const closeBox = await closeBtn.boundingBox();
+    expect(closeBox).not.toBeNull();
+    expect(closeBox.y).toBeGreaterThanOrEqual(0);
+
+    // Click Review Map to dismiss game over screen
+    await reviewMapBtn.click();
+    await expect(modal).not.toBeVisible();
+
+    // Focus restored to #view-results-btn
+    await expect(page.locator("#view-results-btn")).toBeFocused();
+
+    // Map remains visible with game finished state intact
+    await expect(targetState).toHaveAttribute("data-status", "revealed");
+    await expect(page.locator("#strikes-count")).toHaveText("3 / 3");
+    await expect(page.locator("#prompt-completed-actions")).toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeVisible();
+    await expect(page.locator("#new-game-btn")).toBeVisible();
+
+    // Accessibility audit on reviewed map state
+    const reviewScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+    expect(reviewScan.violations).toEqual([]);
+
+    // Clicking View Results re-opens the game over modal
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+
+    // Dismiss via top-right close button and verify focus restoration
+    await closeBtn.click();
+    await expect(modal).not.toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeFocused();
+
+    // Dismiss via Escape key and verify focus restoration
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modal).not.toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeFocused();
+
+    // Dismiss via true backdrop click outside the dialog in the viewport corner
+    await page.locator("#view-results-btn").click();
+    await expect(modal).toBeVisible();
+    await page.mouse.click(4, 4);
+    await expect(modal).not.toBeVisible();
+    await expect(page.locator("#view-results-btn")).toBeFocused();
+
+    // Start a new game via "New Game" button in prompt
+    await page.locator("#new-game-btn").click();
+    await expect(page.locator("#strikes-count")).toHaveText("0 / 3");
+    await expect(page.locator("#score-count")).toHaveText("0");
+    await expect(targetState).not.toHaveAttribute("data-status", /.*/);
+    await expect(page.locator("#prompt-completed-actions")).toBeHidden();
+  });
+
   test("leaderboard: name input autocomplete has datalist and saves score", async ({
     page,
   }) => {
@@ -489,9 +572,34 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await expect(page.locator("#leaderboard-table")).toBeVisible();
     await expect(page.locator("#leaderboard-table")).toContainText("Alex");
 
+    // Close via top-right close button and verify focus restoration to #leaderboard-btn
+    const topCloseBtn = page.locator("#close-leaderboard-top-btn");
+    await expect(topCloseBtn).toBeVisible();
+    await topCloseBtn.click();
+    await expect(modal).not.toHaveAttribute("open", "");
+    await expect(leaderboardBtn).toBeFocused();
+
+    // Re-open and close via Escape key
+    await leaderboardBtn.click();
+    await expect(modal).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modal).not.toHaveAttribute("open", "");
+    await expect(leaderboardBtn).toBeFocused();
+
+    // Re-open and close via true backdrop click outside dialog
+    await leaderboardBtn.click();
+    await expect(modal).toBeVisible();
+    await page.mouse.click(4, 4);
+    await expect(modal).not.toHaveAttribute("open", "");
+    await expect(leaderboardBtn).toBeFocused();
+
+    // Re-open and close via bottom close button
+    await leaderboardBtn.click();
+    await expect(modal).toBeVisible();
     const closeBtn = page.locator("#close-leaderboard-btn");
     await closeBtn.click();
     await expect(modal).not.toHaveAttribute("open", "");
+    await expect(leaderboardBtn).toBeFocused();
   });
 
   test("keyboard navigation: state paths and controls can be activated via Enter and Space", async ({
@@ -594,8 +702,8 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     const modal = page.locator("#leaderboard-modal");
     await expect(modal).toBeVisible();
 
-    const closeBtn = page.locator("#close-leaderboard-btn");
-    await expect(closeBtn).toBeFocused();
+    const topCloseBtn = page.locator("#close-leaderboard-top-btn");
+    await expect(topCloseBtn).toBeFocused();
 
     // Press Tab repeatedly: background controls must remain inert and unreachable
     for (let i = 0; i < 5; i++) {
