@@ -707,7 +707,7 @@ async function submitScore(scoreEntry) {
 }
 
 function qualifiesForTop10(scores, currentScore) {
-  if (typeof currentScore !== "number" || currentScore < 0) return false;
+  if (typeof currentScore !== "number" || currentScore <= 0) return false;
   if (!scores || scores.length < 10) return true;
   const lowest = scores[scores.length - 1]?.score ?? 0;
   return currentScore > lowest;

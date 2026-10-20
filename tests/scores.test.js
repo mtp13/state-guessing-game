@@ -8,7 +8,6 @@ const {
   sortTopScores,
   extractUniqueNames,
   validateScoreEntry,
-  isTopScore,
   selectPrunableSnapshots,
   fetchBlobScores,
   uploadBlobScores,
@@ -320,38 +319,6 @@ test("validateScoreEntry rejects invalid score, accuracy, or streak", () => {
   );
   assert.equal(validateScoreEntry(null), null);
   assert.equal(validateScoreEntry("not-an-object"), null);
-});
-
-test("isTopScore correctly identifies qualifying scores", () => {
-  // Empty leaderboard
-  assert.equal(isTopScore([], 10), true);
-
-  // Fewer than 10 scores
-  const partial = [
-    { score: 50, date: "2026-01-01T00:00:00Z" },
-    { score: 40, date: "2026-01-01T00:00:00Z" },
-  ];
-  assert.equal(isTopScore(partial, 0), true);
-  assert.equal(isTopScore(partial, 30), true);
-
-  // Full 10 scores
-  const full = Array.from({ length: 10 }, (_, i) => ({
-    name: `P${i}`,
-    score: (10 - i) * 5, // 50, 45, 40, ..., 10, 5
-    date: `2026-01-0${i + 1}T00:00:00Z`,
-  }));
-
-  // Higher than lowest (5)
-  assert.equal(isTopScore(full, 6), true);
-  assert.equal(isTopScore(full, 55), true);
-
-  // Less than or equal to lowest (5)
-  assert.equal(isTopScore(full, 5), false);
-  assert.equal(isTopScore(full, 4), false);
-
-  // Invalid score
-  assert.equal(isTopScore(full, -1), false);
-  assert.equal(isTopScore(full, "50"), false);
 });
 
 test("handler OPTIONS returns 204 with Allow header", async () => {
@@ -817,4 +784,58 @@ test("app.js and api/scores.js agree on the leaderboard day key", () => {
     app.filterTodayScores(scores, now).map((s) => s.id),
     filterTodayScores(scores, now).map((s) => s.id),
   );
+});
+
+test("fetchBlobScores returns ok:false when the blob list has more pages", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ blobs: [], hasMore: true, cursor: "next" }),
+  });
+
+  try {
+    const res = await fetchBlobScores("mock-token");
+    assert.equal(res.ok, false);
+    assert.ok(res.error.includes("more than one page"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("validateScoreEntry rejects a score of 0", () => {
+  assert.equal(
+    validateScoreEntry({ name: "Zed", score: 0, accuracy: 0, streak: 0 }),
+    null,
+  );
+});
+
+test("handler POST with a repeated client id does not duplicate the score", async () => {
+  _resetMemoryStore();
+  const oldScoresToken = process.env.SCORES_READ_WRITE_TOKEN;
+  const oldBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.SCORES_READ_WRITE_TOKEN;
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+
+  try {
+    const body = {
+      id: "local_1700000000000_abc123",
+      name: "Retry",
+      score: 20,
+      accuracy: 70,
+      streak: 4,
+    };
+    const first = createMockRes();
+    await handler(createMockReq({ method: "POST", body }), first);
+    const second = createMockRes();
+    await handler(createMockReq({ method: "POST", body }), second);
+
+    assert.equal(first.statusCode, 200);
+    assert.equal(second.statusCode, 200);
+    assert.equal(second.body.success, true);
+    assert.equal(second.body.savedId, body.id);
+    assert.equal(second.body.topScores.length, 1);
+  } finally {
+    if (oldScoresToken) process.env.SCORES_READ_WRITE_TOKEN = oldScoresToken;
+    if (oldBlobToken) process.env.BLOB_READ_WRITE_TOKEN = oldBlobToken;
+  }
 });
