@@ -142,7 +142,7 @@ function validateScoreEntry(entry) {
   if (
     typeof entry.score !== "number" ||
     !Number.isFinite(entry.score) ||
-    entry.score < 0 ||
+    entry.score <= 0 ||
     entry.score > MAX_SCORE
   ) {
     return null;
@@ -181,31 +181,10 @@ function validateScoreEntry(entry) {
   };
 }
 
-/**
- * Determines whether a score qualifies for the top scores list.
- *
- * @param {Array<Object>} scores - Existing scores
- * @param {number} score - Player's score
- * @param {number} [max=10] - Leaderboard capacity
- * @returns {boolean} True if score qualifies for top max
- */
-function isTopScore(scores, score, max = 10) {
-  if (typeof score !== "number" || !Number.isFinite(score) || score < 0) {
-    return false;
-  }
-  if (max <= 0) return false;
-  if (!Array.isArray(scores)) return true;
-
-  const top = sortTopScores(scores, max);
-  if (top.length < max) return true;
-
-  const lowest = top[top.length - 1]?.score ?? 0;
-  return score > lowest;
-}
-
 // Origins allowed to POST besides the host serving the request (the hub site
 // proxies production from a different host). Extend via ALLOWED_ORIGINS
 // (comma-separated origins).
+const CLIENT_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const DEFAULT_ALLOWED_ORIGINS = ["https://mike.pullen.dev"];
 
 const RATE_LIMIT_MAX = 5;
@@ -349,9 +328,11 @@ async function parseBody(req) {
     let raw = "";
     let tooLarge = false;
     req.on("data", (chunk) => {
+      if (tooLarge) return;
       raw += chunk;
       if (raw.length > 16384) {
         tooLarge = true;
+        raw = "";
       }
     });
     req.on("end", () => {
@@ -435,6 +416,14 @@ async function fetchBlobScores(token, now = new Date()) {
       };
     }
     const listData = await listRes.json();
+    if (listData.hasMore) {
+      return {
+        ok: false,
+        topScores: [],
+        names: [],
+        error: "Blob list has more than one page of snapshots",
+      };
+    }
     const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
     const matching = blobs
       .filter((b) => SNAPSHOT_RE.test(b.pathname || ""))
@@ -615,10 +604,13 @@ async function handler(req, res) {
       return sendJson(res, 400, { error: "Invalid score entry" });
     }
 
+    // A client-supplied id makes a Retry after a lost response idempotent.
     const id =
-      typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `score_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      typeof body.id === "string" && CLIENT_ID_RE.test(body.id)
+        ? body.id
+        : typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `score_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const newEntry = {
       ...validated,
       id,
@@ -627,7 +619,12 @@ async function handler(req, res) {
 
     if (!token) {
       const todayScores = filterTodayScores(memoryStore.topScores);
-      const topScores = sortTopScores([...todayScores, newEntry], 10);
+      const topScores = sortTopScores(
+        todayScores.some((s) => s.id === id)
+          ? todayScores
+          : [...todayScores, newEntry],
+        10,
+      );
       const names = extractUniqueNames([
         ...memoryStore.names,
         ...memoryStore.topScores,
@@ -647,6 +644,15 @@ async function handler(req, res) {
     if (!current.ok) {
       console.error("scores: fetchBlobScores failed on POST", current.error);
       return sendJson(res, 502, { error: "Could not read leaderboard" });
+    }
+
+    if (current.topScores.some((s) => s.id === id)) {
+      return sendJson(res, 200, {
+        success: true,
+        topScores: current.topScores,
+        names: current.names,
+        savedId: id,
+      });
     }
 
     const topScores = sortTopScores([...current.topScores, newEntry], 10);
@@ -678,7 +684,6 @@ module.exports.filterTodayScores = filterTodayScores;
 module.exports.sortTopScores = sortTopScores;
 module.exports.extractUniqueNames = extractUniqueNames;
 module.exports.validateScoreEntry = validateScoreEntry;
-module.exports.isTopScore = isTopScore;
 module.exports.isAllowedOrigin = isAllowedOrigin;
 module.exports.checkRateLimit = checkRateLimit;
 module.exports._resetRateLimits = _resetRateLimits;
