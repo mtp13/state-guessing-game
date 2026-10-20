@@ -592,7 +592,6 @@ function bindDomElements() {
     leaderboardBtn: document.getElementById("leaderboard-btn"),
     restartBtn: document.getElementById("restart-btn"),
     promptCard: document.getElementById("prompt-card"),
-    promptLabel: document.getElementById("prompt-label"),
     promptCompletedActions: document.getElementById("prompt-completed-actions"),
     viewResultsBtn: document.getElementById("view-results-btn"),
     newGameBtn: document.getElementById("new-game-btn"),
@@ -867,8 +866,14 @@ function initializeApp() {
     if (typeof dom.gameOverModal.showModal === "function") {
       if (!dom.gameOverModal.open) dom.gameOverModal.showModal();
     }
+    const modalCard = dom.gameOverModal.querySelector(".modal-card");
+    if (modalCard) {
+      modalCard.scrollTop = 0;
+    }
     if (qualifies && dom.playerNameInput && !dom.playerNameInput.disabled) {
       dom.playerNameInput.focus();
+    } else if (dom.closeGameOverBtn) {
+      dom.closeGameOverBtn.focus();
     } else if (dom.reviewMapBtn) {
       dom.reviewMapBtn.focus();
     } else if (dom.playAgainBtn) {
@@ -889,7 +894,11 @@ function initializeApp() {
       dom.gameOverModal.setAttribute("hidden", "");
     }
     announceStatus("Game over dialog dismissed. Reviewing completed map.");
-    if (dom.viewResultsBtn && !dom.viewResultsBtn.hidden) {
+    if (
+      dom.viewResultsBtn &&
+      dom.promptCompletedActions &&
+      !dom.promptCompletedActions.hasAttribute("hidden")
+    ) {
       dom.viewResultsBtn.focus();
     } else if (dom.restartBtn) {
       dom.restartBtn.focus();
@@ -924,7 +933,6 @@ function initializeApp() {
           `Correct! That was ${currentTarget.name}. Congratulations, you finished the map!`,
         );
         openGameOverModalUI();
-        if (dom.playAgainBtn) dom.playAgainBtn.focus();
       } else {
         const nextTarget = gameState.queue[gameState.currentIndex];
         announceStatus(
@@ -961,7 +969,6 @@ function initializeApp() {
             }
           }
           openGameOverModalUI();
-          if (dom.playAgainBtn) dom.playAgainBtn.focus();
         }, 1200);
       } else {
         playSound("incorrect");
@@ -1001,9 +1008,8 @@ function initializeApp() {
         dom.gameOverModal.open
       ) {
         dom.gameOverModal.close();
-      } else {
-        dom.gameOverModal.setAttribute("hidden", "");
       }
+      dom.gameOverModal.setAttribute("hidden", "");
     }
     if (dom.leaderboardModal) {
       if (
@@ -1011,9 +1017,8 @@ function initializeApp() {
         dom.leaderboardModal.open
       ) {
         dom.leaderboardModal.close();
-      } else {
-        dom.leaderboardModal.setAttribute("hidden", "");
       }
+      dom.leaderboardModal.setAttribute("hidden", "");
     }
 
     gameState = createGameState(statesList);
@@ -1051,7 +1056,15 @@ function initializeApp() {
       if (typeof dom.leaderboardModal.showModal === "function") {
         if (!dom.leaderboardModal.open) dom.leaderboardModal.showModal();
       }
-      if (dom.closeLeaderboardBtn) dom.closeLeaderboardBtn.focus();
+      const modalCard = dom.leaderboardModal.querySelector(".modal-card");
+      if (modalCard) {
+        modalCard.scrollTop = 0;
+      }
+      if (dom.closeLeaderboardTopBtn) {
+        dom.closeLeaderboardTopBtn.focus();
+      } else if (dom.closeLeaderboardBtn) {
+        dom.closeLeaderboardBtn.focus();
+      }
     }
   }
 
@@ -1191,6 +1204,9 @@ function initializeApp() {
   if (dom.viewResultsBtn) {
     dom.viewResultsBtn.addEventListener("click", () => {
       playSound("click");
+      if (gameState.completed && gameState.gameOverReason !== "three_strikes") {
+        startConfetti(dom.confettiCanvas);
+      }
       openGameOverModalUI();
     });
   }

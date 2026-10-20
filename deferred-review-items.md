@@ -4,6 +4,12 @@ Findings raised by the automated PR review (MiniMax via OpenCode) and user feedb
 
 ---
 
+## Resolved in PR #4
+
+- **D-7 — Dialog `hidden` attribute symmetry and modal open/close lifecycle**: RESOLVED. Harmonized modal open/close lifecycle and `hidden` attribute handling across `openGameOverModalUI()`, `closeGameOverModal()`, `openLeaderboardModal()`, `closeLeaderboardModal()`, and `handleRestart()`. Modal cards reset `scrollTop` to 0 on open and initial focus lands on the sticky top close button or qualifying input, preventing clipping on mobile viewports.
+
+---
+
 ## Resolved in PR #3
 
 - **D-15 — Mobile button text sizing on iPhone**: RESOLVED. Refined `.icon-btn` typography (`font-size: 0.8125rem`, `padding: 0.4375rem 0.625rem`, `gap: 0.3125rem`, with 20x20px SVG icons and `white-space: nowrap`), ensuring Sound, Restart, and Scores action buttons fit cleanly without clipping or overflow on iPhone 14 (390px) down to 320px screens with $\ge 44 \times 44\text{px}$ touch targets maintained. Stacked header layout at $\le 640\text{px}$ centers buttons and title cleanly.
@@ -46,12 +52,6 @@ The following items raised during PR #2 reviews were resolved prior to merge:
 - **Impact:** Exported and tested, but POST handler always merges and writes even if the score cannot qualify.
 - **Do:** Use `isTopScore()` to skip writing when the score cannot qualify for the top 10.
 
-#### D-7 — Dialog `hidden` attribute symmetry
-
-- **Where:** `app.js` — `render()` vs `openGameOverModalUI()`.
-- **Impact:** `render()` and `openGameOverModalUI()` handle the `hidden` attribute on `<dialog>` elements slightly differently.
-- **Do:** Consolidate modal opening/closing into unified helper functions.
-
 #### D-8 — Merge local-only scores on startup fetch
 
 - **Where:** `app.js` — `fetchScores()`.
@@ -81,3 +81,9 @@ The following items raised during PR #2 reviews were resolved prior to merge:
 - **Where:** `style.css` — `@media (max-width: 640px)`.
 - **Impact:** Component responsive overrides are currently in `@layer utilities`.
 - **Do:** Nest `@media (max-width: 640px)` component rules directly inside `@layer components` and keep only utilities/reduced-motion in `@layer utilities`.
+
+#### D-17 — Pointerdown guard on dialog backdrop clicks
+
+- **Where:** `app.js` — dialog click listeners for `#game-over-modal` and `#leaderboard-modal`.
+- **Impact:** An interaction starting inside the dialog card and releasing outside on the backdrop could trigger dialog dismissal.
+- **Do:** Check both `pointerdown` and `click` event targets against the dialog element before closing.

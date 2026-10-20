@@ -8,6 +8,7 @@ A fast, modern, and accessible US State Guessing Game for mobile and desktop, wr
 
 - **Interactive SVG Map:** Clickable and keyboard-navigable map of all 50 states.
 - **Three-Strikes Rule:** Players have up to 3 wrong guesses; on the 3rd strike the quiz ends and the correct target state is highlighted on the map.
+- **Completed Map Review:** Players can dismiss the Game Over screen at any time to inspect their finished map, re-open results via "View Results", or start a fresh round with "New Game".
 - **Top 10 Leaderboard & Autocomplete:** Persistent high scores across devices backed by a lightweight serverless endpoint, with player name suggestions to avoid duplicate spellings.
 - **Audio Feedback:** Synthesized sound effects using the Web Audio API with a persistent mute toggle.
 - **Score & Streak Tracking:** Real-time accuracy, streak counter, strikes indicators, and modal statistics dialog.
