@@ -15,7 +15,7 @@ A modern, accessible US State Guessing Game for desktop and mobile, written in p
 
 ```sh
 npm test                                     # node --test tests/*.test.js (Node built-in test runner)
-npm run test:e2e                             # playwright test (Desktop Chromium + Mobile WebKit E2E & axe a11y)
+npm run test:e2e                             # playwright test (Desktop Chromium E2E & axe a11y)
 npm run format                               # prettier --write .
 npm run lint                                 # prettier --check . && html-validate index.html
 npm run lint:html                            # html-validate index.html
@@ -87,7 +87,7 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 
 ## Testing
 
-- Unit tests (`npm test`) cover pure game logic, data integrity, and static markup/asset structure using only `node:test` and `node:assert/strict`. Playwright (`npm run test:e2e`) covers real-browser behaviour, responsive layout, and accessibility (`@axe-core/playwright`) in Desktop Chromium and Mobile WebKit. Run both before committing.
+- Unit tests (`npm test`) cover pure game logic, data integrity, and static markup/asset structure using only `node:test` and `node:assert/strict`. Playwright (`npm run test:e2e`) covers a slim set of real-browser smoke tests (CSP, core gameplay, leaderboard save/retry) and accessibility (`@axe-core/playwright`) in Desktop Chromium. Run both before committing.
 - **E2E specs must import `test` and `expect` from `./csp-fixture`, not from `@playwright/test`.** The local `python3 -m http.server` sends no headers, so the fixture reads the CSP from `vercel.json` and adds it to every same-origin HTML document. Without it the CSP-violation assertion can never fail. Keep it identical to the reference apps.
 - **Ports:** E2E uses 4381 (root) and 4382 (`/state-guessing-game/` subfolder); other apps use their own ports. 4321 is deliberately avoided because it is commonly used for manual phone testing. `reuseExistingServer` is `false`, so a leftover server on either port makes `npm run test:e2e` fail instead of testing the wrong app. Stop your dev server before running E2E.
 - Add or update tests for any change to game logic, state data, or UI. Run `npm run lint`, `npm test` and `npm run test:e2e` before you finish.
