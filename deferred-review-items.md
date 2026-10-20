@@ -1,89 +1,36 @@
 # Deferred Review Items
 
-Findings raised by the automated PR review (MiniMax via OpenCode) and user feedback that are tracked across PRs. Each item lists where it came from, its status, why it was deferred, and what to do about it.
+Open follow-ups from PR reviews and user feedback. Completed items are removed; check git history for what was resolved.
 
----
+Last full code review: against `master` after the D-5 / API hardening / CSS / client cleanup PRs. Item IDs (D-n) are kept stable so older PR discussion still maps.
 
-## Resolved in PR #4
+## Accepted risks and decisions
 
-- **D-7 — Dialog `hidden` attribute symmetry and modal open/close lifecycle**: RESOLVED. Harmonized modal open/close lifecycle and `hidden` attribute handling across `openGameOverModalUI()`, `closeGameOverModal()`, `openLeaderboardModal()`, `closeLeaderboardModal()`, and `handleRestart()`. Modal cards reset `scrollTop` to 0 on open and initial focus lands on the sticky top close button or qualifying input, preventing clipping on mobile viewports.
+### D-13 — Snapshot read-modify-write race
 
----
+- **Where:** `handler()` POST → `fetchBlobScores()` then `uploadBlobScores()`.
+- **Status:** accepted at current traffic. Two overlapping submissions both read snapshot S(n) and each writes its own S(n+1); the later timestamp wins and the other entry is lost.
+- **If volume grows:** per-submission blobs merged on read, or conditional writes (ETag / `ifMatch`) with retry.
 
-## Resolved in PR #3
+### D-14 — Blob API version pinned to 7
 
-- **D-15 — Mobile button text sizing on iPhone**: RESOLVED. Refined `.icon-btn` typography (`font-size: 0.8125rem`, `padding: 0.4375rem 0.625rem`, `gap: 0.3125rem`, with 20x20px SVG icons and `white-space: nowrap`), ensuring Sound, Restart, and Scores action buttons fit cleanly without clipping or overflow on iPhone 14 (390px) down to 320px screens with $\ge 44 \times 44\text{px}$ touch targets maintained. Stacked header layout at $\le 640\text{px}$ centers buttons and title cleanly.
+- **Where:** `x-api-version: "7"` in four places in `api/scores.js`.
+- **Status:** needs verification against live credentials, so it can't be done safely from CI alone. Do it deliberately with the production token.
 
----
+### D-19 — `createGameState()` accepts three call shapes
 
-## Resolved in PR #2
+- **Status:** left as is. The app only uses `(states, null, { mode })`, but unit tests deliberately exercise the other shapes; simplifying means rewriting those tests for no user-visible gain.
 
-The following items raised during PR #2 reviews were resolved prior to merge:
+### D-21 — Startup fetch in Practice mode
 
-- **D-1 — Error-handling honesty on save score**: RESOLVED. `submitScore()` returns explicit `success` flag (`data.success === true`). On failure or HTTP 502, button is re-enabled with "Retry", and status announces "Could not save score to online leaderboard. Saved locally."
-- **D-2 / D-3 / Blocker 1 — Vercel Blob overwrite, CDN caching, and snapshot pruning**: RESOLVED. Overwrite caching was replaced with immutable timestamped snapshots (`scores-${Date.now()}.json`), eliminating CDN cache delays. Explicit `x-add-random-suffix: "0"` header added to ensure deterministic filenames. `selectPrunableSnapshots()` was extracted and unit-tested to retain at least 2 freshest snapshots and only prune older snapshots strictly prior to the current write.
-- **Blocker 2 — Transient read failure wiping leaderboard**: RESOLVED. `fetchBlobScores()` returns `{ ok: false, error: "..." }` on API errors versus `{ ok: true, topScores: [], names: [] }` on an empty store. Handler aborts with HTTP 502 instead of overwriting the leaderboard on read failure.
-- **D-9 — E2E coverage gaps**: RESOLVED. Added automated tests covering the real HTTP 502 server failure response and verifying that `#save-score-form` is hidden when the score does not qualify for the top 10.
-- **D-11 — `sortScores()` robustness against malformed/null local entries**: RESOLVED. Filtered non-object and null entries in `sortScores()` with numeric fallback guards on score comparisons, preventing corrupted `localStorage` items from throwing during startup initialization.
-- **D-12 — Exclude review tracking document from production**: RESOLVED. `deferred-review-items.md` added to `.vercelignore`.
-- **State hover cheat bug**: RESOLVED. Removed SVG child `<title>` tags from all 50 state paths while retaining accessible `aria-label` attributes (0 axe violations).
+- **Status:** intentional (makes switching back to Challenge instant). Revisit only if request volume matters.
 
----
+### D-23 — Duplicate leaderboard close controls
 
-## Deferred Items (Future Consideration)
+- **Where:** `index.html` (`#close-leaderboard-top-btn` and `#close-leaderboard-btn`).
+- **Status:** kept. The top button is the sticky one that stays reachable on mobile; the bottom one matches the other dialog. Drop one only if you want a single control.
 
-### Moderate / Minor
+### D-27 (remaining) — Leaderboard day vs. displayed date
 
-#### D-4 — Body limit bounds in `parseBody()`
-
-- **Where:** `api/scores.js` — `parseBody()`.
-- **Impact:** `parseBody()` checks `req.body` first when pre-parsed by the runtime. The stream branch continues accumulating after the 16 KB limit trips before returning null.
-- **Do:** Apply the size check before accumulating and destroy stream on limit overflow.
-
-#### D-5 — Rate limiting and origin check on POST
-
-- **Where:** `api/scores.js` — `handler()`.
-- **Impact:** Public endpoint allows POST requests without per-IP rate limits or origin verification.
-- **Do:** Add Origin verification header check and token bucket rate limiting.
-
-#### D-6 — Unused `isTopScore()` in handler
-
-- **Where:** `api/scores.js` — `isTopScore()`.
-- **Impact:** Exported and tested, but POST handler always merges and writes even if the score cannot qualify.
-- **Do:** Use `isTopScore()` to skip writing when the score cannot qualify for the top 10.
-
-#### D-8 — Merge local-only scores on startup fetch
-
-- **Where:** `app.js` — `fetchScores()`.
-- **Impact:** If a player has a locally saved score that failed to upload to the server, a subsequent page load replaces the local list with the server list.
-- **Do:** Merge local and server scores by unique ID on startup.
-
-#### D-10 — Date formatting in leaderboard table
-
-- **Where:** `app.js` — `renderLeaderboardTable()`.
-- **Impact:** Uses `String(item.date).slice(0, 10)` rather than localized date parsing.
-- **Do:** Use `Intl.DateTimeFormat` or unified `formatDate()` helper.
-
-#### D-13 — Snapshot concurrency / optimistic locking
-
-- **Where:** `api/scores.js` — `uploadBlobScores()`.
-- **Impact:** If two players submit scores within milliseconds of each other, both read snapshot $S_n$ and write $S_{n+1}$. The latter snapshot would overwrite the earlier one's entry.
-- **Do:** For higher volume, introduce optimistic locking (`ifMatch`/ETag on modern Blob API) or per-submission blobs.
-
-#### D-14 — Modernize Blob API version
-
-- **Where:** `api/scores.js`.
-- **Impact:** Currently pinned to API version 7 (`x-api-version: 7`).
-- **Do:** Modernize to API version 10+ with `PUT /?pathname=...` and verify against live credentials.
-
-#### D-16 — Component media queries in `@layer components`
-
-- **Where:** `style.css` — `@media (max-width: 640px)`.
-- **Impact:** Component responsive overrides are currently in `@layer utilities`.
-- **Do:** Nest `@media (max-width: 640px)` component rules directly inside `@layer components` and keep only utilities/reduced-motion in `@layer utilities`.
-
-#### D-17 — Pointerdown guard on dialog backdrop clicks
-
-- **Where:** `app.js` — dialog click listeners for `#game-over-modal` and `#leaderboard-modal`.
-- **Impact:** An interaction starting inside the dialog card and releasing outside on the backdrop could trigger dialog dismissal.
-- **Do:** Check both `pointerdown` and `click` event targets against the dialog element before closing.
+- The leaderboard day resets at midnight US Central, while dates display in the viewer's local time, so a player in another time zone can see an unexpected date. The duplicated day-key logic is now covered by a parity test.
+- **Optional:** label the leaderboard "resets midnight CT".
