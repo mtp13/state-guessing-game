@@ -26,7 +26,7 @@ python3 -m http.server 4381                  # serve locally
 ```
 
 Serve the app over HTTP rather than opening it as `file://`.
-CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and pushes to `master` (skipped for markdown/`docs/`-only changes, and superseded runs on the same ref are cancelled): unit/lint checks (`npm ci`, `npm run lint`, syntax checks, `npm test`) and Playwright E2E/accessibility checks (`npm run test:e2e`).
+CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and pushes to `master` (superseded runs on the same ref are cancelled): unit/lint checks (`npm ci`, `npm run lint`, syntax checks, `npm test`) and Playwright E2E/accessibility checks (`npm run test:e2e`).
 
 ## Layout
 
@@ -95,7 +95,7 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 ## Deployment
 
 - The site is hosted on **Vercel** with static frontend assets plus a serverless scoring endpoint (`api/scores.js`).
-- Production is `https://mike.pullen.dev/state-guessing-game/`, proxied from this Vercel project by the hub site (`mtp13/mike.pullen.dev`). Only `master` is deployed (`git.deploymentEnabled` in `vercel.json`); feature branches and PRs get no Vercel preview, because the Hobby plan caps deployments at 100/day. Test on localhost instead.
+- Production is `https://mike.pullen.dev/state-guessing-game/`, proxied from this Vercel project by the hub site (`mtp13/mike.pullen.dev`). Only `master` is deployed (`git.deploymentEnabled` in `vercel.json`); feature branches and PRs get no Vercel preview (and so no `Vercel` check on PRs, which is expected), because the Hobby plan caps deployments at 100/day. Test on localhost instead. The keys are minimatch patterns: keep `"**": false` (a bare `*` does not match branch names containing `/`, such as `feat/x`, so they would still deploy) and keep the explicit `"master": true`. A test in `tests/markup.test.js` guards this.
 - All paths must stay relative (`./`, `style.css`). Never use root-anchored paths (`/…`) or a `<base>` tag so the app works both at a domain root and in a subfolder.
 - Playwright runs every test both at the root and in a `/state-guessing-game/` subfolder.
 - Headers and `.vercelignore` can only be checked with `curl` against production after merging, since branches are not deployed.

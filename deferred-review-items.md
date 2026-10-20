@@ -34,3 +34,8 @@ Last full code review: against `master` after the D-5 / API hardening / CSS / cl
 
 - The leaderboard day resets at midnight US Central, while dates display in the viewer's local time, so a player in another time zone can see an unexpected date. The duplicated day-key logic is now covered by a parity test.
 - **Optional:** label the leaderboard "resets midnight CT".
+
+### D-28 — Shared standards still describe the old push/CI workflow
+
+- **Where:** `~/dotfiles/agents/AGENTS.md` and the other repos' `vercel.json` / `ci.yml`.
+- **Status:** follow-up outside this repo. Apply `git.deploymentEnabled` (`master: true`, `"**": false`), the CI `concurrency` block, and the "push once per unit of work" rule there.
