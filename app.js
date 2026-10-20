@@ -606,6 +606,12 @@ function updatePlayerNamesDatalist(datalistEl, scores) {
   });
 }
 
+function formatLocalDate(value) {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toLocaleDateString();
+}
+
 function renderLeaderboardTable(tableBody, scores, highlightIndex = -1) {
   if (!tableBody) return;
   tableBody.textContent = "";
@@ -642,10 +648,7 @@ function renderLeaderboardTable(tableBody, scores, highlightIndex = -1) {
       typeof item.accuracy === "string" ? item.accuracy : `${item.accuracy}%`;
 
     const dateTd = document.createElement("td");
-    const rawDate = item.date
-      ? String(item.date).slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
-    dateTd.textContent = rawDate;
+    dateTd.textContent = formatLocalDate(item.date);
 
     tr.appendChild(rankTd);
     tr.appendChild(nameTd);
@@ -1174,7 +1177,7 @@ function initializeApp() {
       }
       const qualifies = qualifiesForTop10(currentLeaderboard, gameState.score);
       if (dom.saveScoreForm) {
-        if (qualifies) {
+        if (qualifies && !gameState.scoreSaved) {
           dom.saveScoreForm.removeAttribute("hidden");
           if (dom.submitScoreBtn) {
             dom.submitScoreBtn.disabled = false;
@@ -1439,6 +1442,7 @@ function initializeApp() {
     const result = await submitScore(scoreEntry);
     if (result.success) {
       activePendingScore = null;
+      gameState.scoreSaved = true;
     }
 
     currentLeaderboard = result.scores;
@@ -1672,6 +1676,7 @@ if (typeof module !== "undefined" && module.exports) {
     skipCurrentState,
     calculateAccuracy,
     checkNewPracticeBest,
+    formatLocalDate,
     getPracticeBestScore,
     initializeApp,
     bindDomElements,
