@@ -11,6 +11,57 @@ let memoryStore = {
   names: [],
 };
 
+// Daily leaderboard reset boundary timezone (US Central Time)
+const LEADERBOARD_TIMEZONE = "America/Chicago";
+
+/**
+ * Formats a date or timestamp into a YYYY-MM-DD calendar day string in the specified timezone.
+ *
+ * @param {Date|string|number} [dateInput=new Date()]
+ * @param {string} [timeZone=LEADERBOARD_TIMEZONE]
+ * @returns {string} YYYY-MM-DD key or empty string if invalid
+ */
+function getDayKey(dateInput = new Date(), timeZone = LEADERBOARD_TIMEZONE) {
+  if (dateInput === null || dateInput === undefined || dateInput === "") {
+    return "";
+  }
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * Filters a list of score entries to retain only those recorded on the same
+ * calendar day as `now` in the specified timezone.
+ *
+ * @param {Array<Object>} scores - Score entries
+ * @param {Date|string|number} [now=new Date()] - Current reference time
+ * @param {string} [timeZone=LEADERBOARD_TIMEZONE] - Timezone for day boundary
+ * @returns {Array<Object>} Filtered scores from today
+ */
+function filterTodayScores(
+  scores,
+  now = new Date(),
+  timeZone = LEADERBOARD_TIMEZONE,
+) {
+  if (!Array.isArray(scores)) return [];
+  const todayKey = getDayKey(now, timeZone);
+  if (!todayKey) return [];
+  return scores.filter(
+    (s) =>
+      s && typeof s === "object" && getDayKey(s.date, timeZone) === todayKey,
+  );
+}
+
 /**
  * Resets the in-memory fallback store (useful for testing).
  * @param {Object} [initial]
@@ -258,9 +309,10 @@ function selectPrunableSnapshots(blobs, now, keep = 2) {
  * Fetches existing scores and names from Vercel Blob storage.
  *
  * @param {string} token - Vercel Blob read/write token
+ * @param {Date|string|number} [now=new Date()] - Reference time for daily reset filtering
  * @returns {Promise<{ ok: boolean, topScores: Array, names: Array, error?: string }>}
  */
-async function fetchBlobScores(token) {
+async function fetchBlobScores(token, now = new Date()) {
   try {
     const listRes = await fetch(
       "https://blob.vercel-storage.com/?limit=50&prefix=scores",
@@ -308,10 +360,12 @@ async function fetchBlobScores(token) {
     }
     const data = await contentRes.json();
     const rawScores = data.topScores || data.scores || [];
-    const topScores = sortTopScores(rawScores, 10);
-    const names = Array.isArray(data.names)
-      ? extractUniqueNames(data.names)
-      : extractUniqueNames(topScores);
+    const names = extractUniqueNames([
+      ...(Array.isArray(data.names) ? data.names : []),
+      ...rawScores,
+    ]);
+    const todayScores = filterTodayScores(rawScores, now);
+    const topScores = sortTopScores(todayScores, 10);
     return { ok: true, topScores, names };
   } catch (err) {
     return {
@@ -415,9 +469,19 @@ async function handler(req, res) {
 
   if (req.method === "GET") {
     if (!token) {
+      const topScores = sortTopScores(
+        filterTodayScores(memoryStore.topScores),
+        10,
+      );
+      const names = extractUniqueNames([
+        ...memoryStore.names,
+        ...memoryStore.topScores,
+      ]);
+      memoryStore.topScores = topScores;
+      memoryStore.names = names;
       return sendJson(res, 200, {
-        topScores: memoryStore.topScores,
-        names: memoryStore.names,
+        topScores,
+        names,
       });
     }
 
@@ -450,10 +514,11 @@ async function handler(req, res) {
     };
 
     if (!token) {
-      const topScores = sortTopScores([...memoryStore.topScores, newEntry], 10);
+      const todayScores = filterTodayScores(memoryStore.topScores);
+      const topScores = sortTopScores([...todayScores, newEntry], 10);
       const names = extractUniqueNames([
         ...memoryStore.names,
-        ...topScores,
+        ...memoryStore.topScores,
         validated.name,
       ]);
       memoryStore.topScores = topScores;
@@ -495,6 +560,9 @@ async function handler(req, res) {
 
 module.exports = handler;
 module.exports.handler = handler;
+module.exports.LEADERBOARD_TIMEZONE = LEADERBOARD_TIMEZONE;
+module.exports.getDayKey = getDayKey;
+module.exports.filterTodayScores = filterTodayScores;
 module.exports.sortTopScores = sortTopScores;
 module.exports.extractUniqueNames = extractUniqueNames;
 module.exports.validateScoreEntry = validateScoreEntry;

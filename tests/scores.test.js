@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const handler = require("../api/scores.js");
 const {
+  getDayKey,
+  filterTodayScores,
   sortTopScores,
   extractUniqueNames,
   validateScoreEntry,
@@ -584,5 +586,77 @@ test("handler returns 502 on GET/POST when Blob storage read fails", async () =>
     globalThis.fetch = originalFetch;
     if (oldScoresToken) process.env.SCORES_READ_WRITE_TOKEN = oldScoresToken;
     else delete process.env.SCORES_READ_WRITE_TOKEN;
+  }
+});
+
+test("getDayKey and filterTodayScores reset scores at midnight America/Chicago", () => {
+  // 2026-10-20T04:30:00.000Z is 2026-10-19 23:30:00 CDT (America/Chicago, UTC-5)
+  // 2026-10-20T05:30:00.000Z is 2026-10-20 00:30:00 CDT (America/Chicago, UTC-5)
+  const beforeMidnightCDT = "2026-10-20T04:30:00.000Z";
+  const afterMidnightCDT = "2026-10-20T05:30:00.000Z";
+
+  assert.equal(getDayKey(beforeMidnightCDT, "America/Chicago"), "2026-10-19");
+  assert.equal(getDayKey(afterMidnightCDT, "America/Chicago"), "2026-10-20");
+
+  const entries = [
+    { name: "YesterdayPlayer", score: 49, date: beforeMidnightCDT },
+    { name: "TodayPlayer", score: 35, date: afterMidnightCDT },
+  ];
+
+  const filtered = filterTodayScores(
+    entries,
+    new Date("2026-10-20T12:00:00.000Z"),
+    "America/Chicago",
+  );
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].name, "TodayPlayer");
+});
+
+test("daily reset preserves player name suggestions across days while resetting topScores", async () => {
+  const yesterdayScore = {
+    id: "yesterday-1",
+    name: "VeteranPlayer",
+    score: 50,
+    accuracy: 100,
+    streak: 50,
+    date: "2020-01-01T12:00:00.000Z",
+  };
+  _resetMemoryStore({
+    topScores: [yesterdayScore],
+    names: ["EarlierPlayer"],
+  });
+
+  const oldScoresToken = process.env.SCORES_READ_WRITE_TOKEN;
+  const oldBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  delete process.env.SCORES_READ_WRITE_TOKEN;
+  delete process.env.BLOB_READ_WRITE_TOKEN;
+
+  try {
+    // GET on a new day returns empty topScores but retains names from previous days
+    const getReq = createMockReq({ method: "GET" });
+    const getRes = createMockRes();
+    await handler(getReq, getRes);
+    assert.equal(getRes.statusCode, 200);
+    assert.deepEqual(getRes.body.topScores, []);
+    assert.deepEqual(getRes.body.names, ["EarlierPlayer", "VeteranPlayer"]);
+
+    // POST on the new day starts fresh topScores while keeping cumulative names
+    const postReq = createMockReq({
+      method: "POST",
+      body: { name: "NewDayPlayer", score: 25, accuracy: 80, streak: 5 },
+    });
+    const postRes = createMockRes();
+    await handler(postReq, postRes);
+    assert.equal(postRes.statusCode, 200);
+    assert.equal(postRes.body.topScores.length, 1);
+    assert.equal(postRes.body.topScores[0].name, "NewDayPlayer");
+    assert.deepEqual(postRes.body.names, [
+      "EarlierPlayer",
+      "NewDayPlayer",
+      "VeteranPlayer",
+    ]);
+  } finally {
+    if (oldScoresToken) process.env.SCORES_READ_WRITE_TOKEN = oldScoresToken;
+    if (oldBlobToken) process.env.BLOB_READ_WRITE_TOKEN = oldBlobToken;
   }
 });
