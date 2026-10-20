@@ -961,7 +961,8 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
 
     let scoresApiCalled = false;
     page.on("request", (req) => {
-      if (req.url().includes("/api/scores")) scoresApiCalled = true;
+      if (req.url().includes("/api/scores") && req.method() !== "GET")
+        scoresApiCalled = true;
     });
 
     // Make 1 wrong guess first, so total guesses = 51

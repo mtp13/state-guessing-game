@@ -841,27 +841,6 @@
   }
 
   @media (prefers-color-scheme: dark) {
-    .mode-btn[aria-checked="true"],
-    .mode-btn[aria-pressed="true"] {
-      background-color: #2563eb;
-      color: #ffffff;
-    }
-
-    .mode-btn[aria-checked="true"]:hover,
-    .mode-btn[aria-pressed="true"]:hover {
-      background-color: #1d4ed8;
-      color: #ffffff;
-    }
-
-    .btn-primary {
-      background-color: #2563eb;
-      color: #ffffff;
-    }
-
-    .btn-primary:hover {
-      background-color: #1d4ed8;
-    }
-
     .practice-best-banner {
       background-color: rgba(16, 185, 129, 0.18);
       color: #34d399;
