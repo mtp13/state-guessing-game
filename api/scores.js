@@ -142,7 +142,7 @@ function validateScoreEntry(entry) {
   if (
     typeof entry.score !== "number" ||
     !Number.isFinite(entry.score) ||
-    entry.score < 0 ||
+    entry.score <= 0 ||
     entry.score > MAX_SCORE
   ) {
     return null;
@@ -181,26 +181,108 @@ function validateScoreEntry(entry) {
   };
 }
 
+// Origins allowed to POST besides the host serving the request (the hub site
+// proxies production from a different host). Extend via ALLOWED_ORIGINS
+// (comma-separated origins).
+const CLIENT_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const DEFAULT_ALLOWED_ORIGINS = ["https://mike.pullen.dev"];
+
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_TRACKED = 1000;
+
+// Best-effort per-instance limiter: serverless instances don't share memory,
+// so this blunts bursts but is not a global guarantee.
+const rateLimitHits = new Map();
+
 /**
- * Determines whether a score qualifies for the top scores list.
- *
- * @param {Array<Object>} scores - Existing scores
- * @param {number} score - Player's score
- * @param {number} [max=10] - Leaderboard capacity
- * @returns {boolean} True if score qualifies for top max
+ * Clears rate limiter state (useful for testing).
  */
-function isTopScore(scores, score, max = 10) {
-  if (typeof score !== "number" || !Number.isFinite(score) || score < 0) {
+function _resetRateLimits() {
+  rateLimitHits.clear();
+}
+
+function headerValue(req, name) {
+  const value = req?.headers?.[name];
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === "string" ? first.split(",")[0].trim() : "";
+}
+
+/**
+ * Checks that a POST comes from a browser page on an allowed origin.
+ * Browsers always send `Origin` on POST, so a missing header is rejected.
+ *
+ * @param {Object} req - HTTP request
+ * @returns {boolean}
+ */
+function isAllowedOrigin(req) {
+  const origin = headerValue(req, "origin");
+  if (!origin) return false;
+
+  let originUrl;
+  try {
+    originUrl = new URL(origin);
+  } catch {
     return false;
   }
-  if (max <= 0) return false;
-  if (!Array.isArray(scores)) return true;
+  if (originUrl.protocol !== "https:" && originUrl.protocol !== "http:") {
+    return false;
+  }
 
-  const top = sortTopScores(scores, max);
-  if (top.length < max) return true;
+  const hosts = [
+    headerValue(req, "host"),
+    headerValue(req, "x-forwarded-host"),
+  ];
+  if (hosts.includes(originUrl.host)) return true;
 
-  const lowest = top[top.length - 1]?.score ?? 0;
-  return score > lowest;
+  const extra = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return [...DEFAULT_ALLOWED_ORIGINS, ...extra].includes(originUrl.origin);
+}
+
+function getClientKey(req) {
+  return (
+    headerValue(req, "x-forwarded-for") ||
+    headerValue(req, "x-real-ip") ||
+    req?.socket?.remoteAddress ||
+    "unknown"
+  );
+}
+
+/**
+ * Fixed-window rate limit per client address.
+ *
+ * @param {Object} req - HTTP request
+ * @param {number} [now=Date.now()]
+ * @returns {{ limited: boolean, retryAfter: number }}
+ */
+function checkRateLimit(req, now = Date.now()) {
+  if (rateLimitHits.size >= RATE_LIMIT_MAX_TRACKED) {
+    for (const [key, entry] of rateLimitHits) {
+      if (now - entry.start >= RATE_LIMIT_WINDOW_MS) rateLimitHits.delete(key);
+    }
+    if (rateLimitHits.size >= RATE_LIMIT_MAX_TRACKED) rateLimitHits.clear();
+  }
+
+  const key = getClientKey(req);
+  let entry = rateLimitHits.get(key);
+  if (!entry || now - entry.start >= RATE_LIMIT_WINDOW_MS) {
+    entry = { start: now, count: 0 };
+    rateLimitHits.set(key, entry);
+  }
+  entry.count += 1;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return {
+      limited: true,
+      retryAfter: Math.max(
+        1,
+        Math.ceil((entry.start + RATE_LIMIT_WINDOW_MS - now) / 1000),
+      ),
+    };
+  }
+  return { limited: false, retryAfter: 0 };
 }
 
 /**
@@ -246,9 +328,11 @@ async function parseBody(req) {
     let raw = "";
     let tooLarge = false;
     req.on("data", (chunk) => {
+      if (tooLarge) return;
       raw += chunk;
       if (raw.length > 16384) {
         tooLarge = true;
+        raw = "";
       }
     });
     req.on("end", () => {
@@ -332,6 +416,14 @@ async function fetchBlobScores(token, now = new Date()) {
       };
     }
     const listData = await listRes.json();
+    if (listData.hasMore) {
+      return {
+        ok: false,
+        topScores: [],
+        names: [],
+        error: "Blob list has more than one page of snapshots",
+      };
+    }
     const blobs = Array.isArray(listData.blobs) ? listData.blobs : [];
     const matching = blobs
       .filter((b) => SNAPSHOT_RE.test(b.pathname || ""))
@@ -497,16 +589,28 @@ async function handler(req, res) {
   }
 
   if (req.method === "POST") {
+    if (!isAllowedOrigin(req)) {
+      return sendJson(res, 403, { error: "Forbidden origin" });
+    }
+    const limit = checkRateLimit(req);
+    if (limit.limited) {
+      res.setHeader("Retry-After", String(limit.retryAfter));
+      return sendJson(res, 429, { error: "Too many requests" });
+    }
+
     const body = await parseBody(req);
     const validated = validateScoreEntry(body);
     if (!validated) {
       return sendJson(res, 400, { error: "Invalid score entry" });
     }
 
+    // A client-supplied id makes a Retry after a lost response idempotent.
     const id =
-      typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `score_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      typeof body.id === "string" && CLIENT_ID_RE.test(body.id)
+        ? body.id
+        : typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `score_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const newEntry = {
       ...validated,
       id,
@@ -515,7 +619,12 @@ async function handler(req, res) {
 
     if (!token) {
       const todayScores = filterTodayScores(memoryStore.topScores);
-      const topScores = sortTopScores([...todayScores, newEntry], 10);
+      const topScores = sortTopScores(
+        todayScores.some((s) => s.id === id)
+          ? todayScores
+          : [...todayScores, newEntry],
+        10,
+      );
       const names = extractUniqueNames([
         ...memoryStore.names,
         ...memoryStore.topScores,
@@ -535,6 +644,15 @@ async function handler(req, res) {
     if (!current.ok) {
       console.error("scores: fetchBlobScores failed on POST", current.error);
       return sendJson(res, 502, { error: "Could not read leaderboard" });
+    }
+
+    if (current.topScores.some((s) => s.id === id)) {
+      return sendJson(res, 200, {
+        success: true,
+        topScores: current.topScores,
+        names: current.names,
+        savedId: id,
+      });
     }
 
     const topScores = sortTopScores([...current.topScores, newEntry], 10);
@@ -566,7 +684,9 @@ module.exports.filterTodayScores = filterTodayScores;
 module.exports.sortTopScores = sortTopScores;
 module.exports.extractUniqueNames = extractUniqueNames;
 module.exports.validateScoreEntry = validateScoreEntry;
-module.exports.isTopScore = isTopScore;
+module.exports.isAllowedOrigin = isAllowedOrigin;
+module.exports.checkRateLimit = checkRateLimit;
+module.exports._resetRateLimits = _resetRateLimits;
 module.exports.selectPrunableSnapshots = selectPrunableSnapshots;
 module.exports.fetchBlobScores = fetchBlobScores;
 module.exports.uploadBlobScores = uploadBlobScores;

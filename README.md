@@ -29,13 +29,13 @@ python3 -m http.server 4381
 
 Then open <http://localhost:4381/>. (Note: `/api/scores` requires `vercel dev` or falls back gracefully to `localStorage` when run under python3 http.server).
 
-| Command            | What it does                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `npm ci`           | Install the dev tooling dependencies (once)                                                 |
-| `npm test`         | Run unit and static markup tests (Node built-in test runner)                                |
-| `npm run test:e2e` | Run Playwright browser tests (Desktop Chromium + Mobile WebKit, root & subfolder, axe a11y) |
-| `npm run lint`     | Check formatting (Prettier) and HTML validity (`html-validate`)                             |
-| `npm run format`   | Format all code with Prettier                                                               |
+| Command            | What it does                                                                |
+| ------------------ | --------------------------------------------------------------------------- |
+| `npm ci`           | Install the dev tooling dependencies (once)                                 |
+| `npm test`         | Run unit and static markup tests (Node built-in test runner)                |
+| `npm run test:e2e` | Run Playwright browser tests (Desktop Chromium, root & subfolder, axe a11y) |
+| `npm run lint`     | Check formatting (Prettier) and HTML validity (`html-validate`)             |
+| `npm run format`   | Format all code with Prettier                                               |
 
 To run the Playwright tests for the first time, install the required browsers:
 

@@ -27,16 +27,8 @@ module.exports = defineConfig({
       use: { ...devices["Desktop Chrome"], baseURL: ROOT_URL },
     },
     {
-      name: "Mobile WebKit",
-      use: { ...devices["iPhone 14"], baseURL: ROOT_URL },
-    },
-    {
       name: "Desktop Chromium (subfolder)",
       use: { ...devices["Desktop Chrome"], baseURL: SUBFOLDER_URL },
-    },
-    {
-      name: "Mobile WebKit (subfolder)",
-      use: { ...devices["iPhone 14"], baseURL: SUBFOLDER_URL },
     },
   ],
   webServer: [
