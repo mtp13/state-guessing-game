@@ -496,3 +496,11 @@ test("challenge mode explicitly requested preserves 3 strikes elimination", () =
   assert.equal(game.gameOverReason, "three_strikes");
   assert.equal(game.revealedStateId, "TX");
 });
+
+test("formatLocalDate renders a local date string and tolerates bad input", () => {
+  const { formatLocalDate } = require("../app.js");
+  const iso = "2026-10-20T01:30:00.000Z";
+  assert.equal(formatLocalDate(iso), new Date(iso).toLocaleDateString());
+  assert.equal(typeof formatLocalDate("not-a-date"), "string");
+  assert.equal(typeof formatLocalDate(undefined), "string");
+});
