@@ -74,6 +74,22 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     });
   });
 
+  // A 0-point game can't be saved, so score one point before striking out.
+  async function scoreOnePointThenStrikeOut(page) {
+    const first = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    await page.locator(`.state[data-name="${first}"]`).dispatchEvent("click");
+    await expect(page.locator("#score-count")).toHaveText("1");
+    const target = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    const wrong = page.locator(`.state:not([data-name="${target}"])`).first();
+    await wrong.dispatchEvent("click");
+    await wrong.dispatchEvent("click");
+    await wrong.dispatchEvent("click");
+  }
+
   test.afterEach(async ({ page }) => {
     const violations = await page
       .evaluate(() => window.__cspViolations || [])
@@ -183,7 +199,14 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("./");
 
-    // 3. Mid-game audit with 1 strike
+    // 3. Mid-game audit with 1 strike (after 1 point, so the score is saveable)
+    const firstName = (
+      await page.locator("#target-state-name").textContent()
+    ).trim();
+    await page
+      .locator(`.state[data-name="${firstName}"]`)
+      .dispatchEvent("click");
+    await expect(page.locator("#score-count")).toHaveText("1");
     const targetName = (
       await page.locator("#target-state-name").textContent()
     ).trim();
@@ -341,16 +364,8 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
       "Alex",
     );
 
-    // Trigger 3 strikes to open game over modal
-    const targetName = (
-      await page.locator("#target-state-name").textContent()
-    ).trim();
-    const wrongState = page
-      .locator(`.state:not([data-name="${targetName}"])`)
-      .first();
-    await wrongState.dispatchEvent("click");
-    await wrongState.dispatchEvent("click");
-    await wrongState.dispatchEvent("click");
+    // Score a point, then strike out to open the game over modal
+    await scoreOnePointThenStrikeOut(page);
 
     const modal = page.locator("#game-over-modal");
     await expect(modal).toBeVisible();
@@ -405,15 +420,7 @@ test.describe("US State Guessing Game E2E & Accessibility", () => {
 
     await page.goto("./");
 
-    const targetName = (
-      await page.locator("#target-state-name").textContent()
-    ).trim();
-    const wrongState = page
-      .locator(`.state:not([data-name="${targetName}"])`)
-      .first();
-    await wrongState.dispatchEvent("click");
-    await wrongState.dispatchEvent("click");
-    await wrongState.dispatchEvent("click");
+    await scoreOnePointThenStrikeOut(page);
 
     const modal = page.locator("#game-over-modal");
     await expect(modal).toBeVisible();
