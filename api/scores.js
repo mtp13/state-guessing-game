@@ -203,6 +203,109 @@ function isTopScore(scores, score, max = 10) {
   return score > lowest;
 }
 
+// Origins allowed to POST besides the host serving the request (the hub site
+// proxies production from a different host). Extend via ALLOWED_ORIGINS
+// (comma-separated origins).
+const DEFAULT_ALLOWED_ORIGINS = ["https://mike.pullen.dev"];
+
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_TRACKED = 1000;
+
+// Best-effort per-instance limiter: serverless instances don't share memory,
+// so this blunts bursts but is not a global guarantee.
+const rateLimitHits = new Map();
+
+/**
+ * Clears rate limiter state (useful for testing).
+ */
+function _resetRateLimits() {
+  rateLimitHits.clear();
+}
+
+function headerValue(req, name) {
+  const value = req?.headers?.[name];
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === "string" ? first.split(",")[0].trim() : "";
+}
+
+/**
+ * Checks that a POST comes from a browser page on an allowed origin.
+ * Browsers always send `Origin` on POST, so a missing header is rejected.
+ *
+ * @param {Object} req - HTTP request
+ * @returns {boolean}
+ */
+function isAllowedOrigin(req) {
+  const origin = headerValue(req, "origin");
+  if (!origin) return false;
+
+  let originUrl;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (originUrl.protocol !== "https:" && originUrl.protocol !== "http:") {
+    return false;
+  }
+
+  const hosts = [
+    headerValue(req, "host"),
+    headerValue(req, "x-forwarded-host"),
+  ];
+  if (hosts.includes(originUrl.host)) return true;
+
+  const extra = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return [...DEFAULT_ALLOWED_ORIGINS, ...extra].includes(originUrl.origin);
+}
+
+function getClientKey(req) {
+  return (
+    headerValue(req, "x-forwarded-for") ||
+    headerValue(req, "x-real-ip") ||
+    req?.socket?.remoteAddress ||
+    "unknown"
+  );
+}
+
+/**
+ * Fixed-window rate limit per client address.
+ *
+ * @param {Object} req - HTTP request
+ * @param {number} [now=Date.now()]
+ * @returns {{ limited: boolean, retryAfter: number }}
+ */
+function checkRateLimit(req, now = Date.now()) {
+  if (rateLimitHits.size >= RATE_LIMIT_MAX_TRACKED) {
+    for (const [key, entry] of rateLimitHits) {
+      if (now - entry.start >= RATE_LIMIT_WINDOW_MS) rateLimitHits.delete(key);
+    }
+    if (rateLimitHits.size >= RATE_LIMIT_MAX_TRACKED) rateLimitHits.clear();
+  }
+
+  const key = getClientKey(req);
+  let entry = rateLimitHits.get(key);
+  if (!entry || now - entry.start >= RATE_LIMIT_WINDOW_MS) {
+    entry = { start: now, count: 0 };
+    rateLimitHits.set(key, entry);
+  }
+  entry.count += 1;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return {
+      limited: true,
+      retryAfter: Math.max(
+        1,
+        Math.ceil((entry.start + RATE_LIMIT_WINDOW_MS - now) / 1000),
+      ),
+    };
+  }
+  return { limited: false, retryAfter: 0 };
+}
+
 /**
  * Sends a JSON HTTP response with security headers.
  *
@@ -497,6 +600,15 @@ async function handler(req, res) {
   }
 
   if (req.method === "POST") {
+    if (!isAllowedOrigin(req)) {
+      return sendJson(res, 403, { error: "Forbidden origin" });
+    }
+    const limit = checkRateLimit(req);
+    if (limit.limited) {
+      res.setHeader("Retry-After", String(limit.retryAfter));
+      return sendJson(res, 429, { error: "Too many requests" });
+    }
+
     const body = await parseBody(req);
     const validated = validateScoreEntry(body);
     if (!validated) {
@@ -567,6 +679,9 @@ module.exports.sortTopScores = sortTopScores;
 module.exports.extractUniqueNames = extractUniqueNames;
 module.exports.validateScoreEntry = validateScoreEntry;
 module.exports.isTopScore = isTopScore;
+module.exports.isAllowedOrigin = isAllowedOrigin;
+module.exports.checkRateLimit = checkRateLimit;
+module.exports._resetRateLimits = _resetRateLimits;
 module.exports.selectPrunableSnapshots = selectPrunableSnapshots;
 module.exports.fetchBlobScores = fetchBlobScores;
 module.exports.uploadBlobScores = uploadBlobScores;

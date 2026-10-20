@@ -73,6 +73,7 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 - **Immutable timestamped snapshots:** Avoids CDN cache propagation delays on writes by storing scores in timestamped snapshots (`scores-<ts>.json` where `<ts>` is epoch milliseconds, uploaded with `x-add-random-suffix: "0"`).
 - **Snapshot pruning:** `selectPrunableSnapshots()` retains at least the 2 freshest snapshots while safely identifying older snapshots strictly prior to the current write for background deletion.
 - **Daily reset (US Central Time):** `filterTodayScores()` filters leaderboard scores by calendar day in `America/Chicago` (`getDayKey()`), resetting the Top 10 each day at midnight Central Time while preserving cumulative player names in `names` for autocomplete.
+- **POST abuse controls:** `isAllowedOrigin()` returns HTTP 403 unless the `Origin` header matches the request host / `x-forwarded-host`, `https://mike.pullen.dev` (the hub proxy), or an origin in the comma-separated `ALLOWED_ORIGINS` env var. `checkRateLimit()` is a best-effort in-memory limiter (5 POSTs per minute per client IP, HTTP 429 with `Retry-After`); serverless instances don't share memory, so add a Vercel Firewall rate-limit rule for a global limit.
 - **Fail-safe HTTP 502 contract:** If Blob storage read or listing fails, `fetchBlobScores()` returns `{ ok: false, error }` and the handler responds with HTTP 502 (`Could not read leaderboard`), preventing transient read failures from wiping existing scores.
 
 ## Conventions
