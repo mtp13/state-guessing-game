@@ -26,7 +26,7 @@ python3 -m http.server 4381                  # serve locally
 ```
 
 Serve the app over HTTP rather than opening it as `file://`.
-CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and pushes to `master`: unit/lint checks (`npm ci`, `npm run lint`, syntax checks, `npm test`) and Playwright E2E/accessibility checks (`npm run test:e2e`).
+CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and pushes to `master` (skipped for markdown/`docs/`-only changes, and superseded runs on the same ref are cancelled): unit/lint checks (`npm ci`, `npm run lint`, syntax checks, `npm test`) and Playwright E2E/accessibility checks (`npm run test:e2e`).
 
 ## Layout
 
@@ -95,10 +95,10 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
 ## Deployment
 
 - The site is hosted on **Vercel** with static frontend assets plus a serverless scoring endpoint (`api/scores.js`).
-- Production is `https://mike.pullen.dev/state-guessing-game/`, proxied from this Vercel project by the hub site (`mtp13/mike.pullen.dev`). Previews serve the app from `/`.
+- Production is `https://mike.pullen.dev/state-guessing-game/`, proxied from this Vercel project by the hub site (`mtp13/mike.pullen.dev`). Only `master` is deployed (`git.deploymentEnabled` in `vercel.json`); feature branches and PRs get no Vercel preview, because the Hobby plan caps deployments at 100/day. Test on localhost instead.
 - All paths must stay relative (`./`, `style.css`). Never use root-anchored paths (`/…`) or a `<base>` tag so the app works both at a domain root and in a subfolder.
 - Playwright runs every test both at the root and in a `/state-guessing-game/` subfolder.
-- Vercel previews are behind login protection, so headers and `.vercelignore` can only be checked with `curl` against production after merging.
+- Headers and `.vercelignore` can only be checked with `curl` against production after merging, since branches are not deployed.
 - `.vercelignore` excludes `package.json`, `package-lock.json`, tests, docs and tooling configs so Vercel deploys only the app's runtime files and skips `npm install`. `package.json` also has no `build` script, and no build script should be added. Note: `api/` must **never** be added to `.vercelignore`.
 - Serverless storage uses Vercel Blob with static read-write token (`SCORES_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN`), storing scores in immutable timestamped snapshots (`scores-<ts>.json`) pruned via `selectPrunableSnapshots()` and returning HTTP 502 on read failures to protect leaderboard data. In local dev without `vercel dev` (e.g. `python3 -m http.server`), client falls back smoothly to `localStorage`.
 - If you add a new tooling or config file, add it to `.vercelignore` so it isn't served. Never commit secrets.
@@ -111,6 +111,7 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
   branch first (`feat/…`, `fix/…`, `chore/…`, `docs/…`). If you're already on a feature
   branch for related work, keep using it. Once a PR is merged, start new work on a fresh
   branch from an up-to-date `master`, and never push to a merged branch.
+- Commit locally as often as you like, but push once per unit of work: every push to `master` is a Vercel deployment and every PR push is a CI run. Don't push WIP commits, and batch review fixes into one push.
 - When the work is finished, run `npm run format`, then `npm run lint`, `npm test` and `npm run test:e2e`. Commit only once all of them pass, then push the branch and open a pull request against `master` with `gh pr create`. Every commit must be formatted, not just the last one before a PR. Give the PR a summary and test notes. You don't need to ask first. If a PR is already open for the branch, push to update it.
 - **Mandatory PR review before merge:** Every PR must be reviewed by the review agent (MiniMax via OpenCode) after being submitted (`gh pr create`) and before merging. Run `opencode run -m opencode/minimax-m3.1-flash-free "Review PR #<n>..."`. Address any blockers, and keep a persistent list in `deferred-review-items.md` for items not implemented immediately that need future consideration. If further commits are pushed to the PR, re-run the review on the updated PR. Never merge a PR without completed review approval and green CI checks.
 - Use the `gh` CLI for PRs, issues and checking CI runs. Each PR runs CI through GitHub
