@@ -4,10 +4,6 @@ Open follow-ups from PR reviews and user feedback. Completed items are removed; 
 
 ## Open
 
-### Bugs
-
-- **GitHub issue #6 — Score can be saved twice; leaderboard dates not in local time.** After saving, dismissing the dialog and pressing "View Results" re-enables the save form. Dates should use the local time zone (`app.js` `renderLeaderboardTable()`, currently `String(item.date).slice(0, 10)`; use `Intl.DateTimeFormat`).
-
 ### API (`api/scores.js`)
 
 - **D-4 — `parseBody()` size limit:** check the 16 KB limit before accumulating and destroy the stream on overflow.
