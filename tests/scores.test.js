@@ -13,6 +13,9 @@ const {
   fetchBlobScores,
   uploadBlobScores,
   _resetMemoryStore,
+  _resetRateLimits,
+  isAllowedOrigin,
+  checkRateLimit,
 } = handler;
 
 // Helper to create mock HTTP request
@@ -20,10 +23,17 @@ function createMockReq({
   method = "GET",
   body = null,
   streamBody = null,
+  headers = {},
 } = {}) {
   const req = new EventEmitter();
   req.method = method;
-  req.headers = { "content-type": "application/json" };
+  req.headers = {
+    "content-type": "application/json",
+    host: "game.example.com",
+    origin: "https://game.example.com",
+    "x-forwarded-for": "203.0.113.7",
+    ...headers,
+  };
   if (streamBody !== null) {
     req.body = undefined;
     process.nextTick(() => {
@@ -659,4 +669,128 @@ test("daily reset preserves player name suggestions across days while resetting 
     if (oldScoresToken) process.env.SCORES_READ_WRITE_TOKEN = oldScoresToken;
     if (oldBlobToken) process.env.BLOB_READ_WRITE_TOKEN = oldBlobToken;
   }
+});
+
+test("isAllowedOrigin accepts same-host and configured origins only", () => {
+  const mk = (headers) => ({ headers });
+  assert.equal(
+    isAllowedOrigin(
+      mk({ origin: "https://game.example.com", host: "game.example.com" }),
+    ),
+    true,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      mk({
+        origin: "https://mike.pullen.dev",
+        host: "state-guessing-game.vercel.app",
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      mk({
+        origin: "https://proxy.example.org",
+        host: "internal.vercel.app",
+        "x-forwarded-host": "proxy.example.org",
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      mk({ origin: "https://evil.example", host: "game.example.com" }),
+    ),
+    false,
+  );
+  assert.equal(isAllowedOrigin(mk({ host: "game.example.com" })), false);
+  assert.equal(
+    isAllowedOrigin(mk({ origin: "null", host: "game.example.com" })),
+    false,
+  );
+  assert.equal(
+    isAllowedOrigin(
+      mk({ origin: "ftp://game.example.com", host: "game.example.com" }),
+    ),
+    false,
+  );
+
+  const old = process.env.ALLOWED_ORIGINS;
+  process.env.ALLOWED_ORIGINS = "https://extra.example, https://other.example";
+  try {
+    assert.equal(
+      isAllowedOrigin(
+        mk({ origin: "https://extra.example", host: "game.example.com" }),
+      ),
+      true,
+    );
+  } finally {
+    if (old === undefined) delete process.env.ALLOWED_ORIGINS;
+    else process.env.ALLOWED_ORIGINS = old;
+  }
+});
+
+test("checkRateLimit allows 5 per window per client, then resets", () => {
+  _resetRateLimits();
+  const reqA = { headers: { "x-forwarded-for": "198.51.100.1" } };
+  const reqB = { headers: { "x-forwarded-for": "198.51.100.2" } };
+  const t0 = 1_000_000;
+  for (let i = 0; i < 5; i++) {
+    assert.equal(checkRateLimit(reqA, t0 + i).limited, false);
+  }
+  const blocked = checkRateLimit(reqA, t0 + 10_000);
+  assert.equal(blocked.limited, true);
+  assert.equal(blocked.retryAfter, 50);
+  assert.equal(checkRateLimit(reqB, t0 + 10_000).limited, false);
+  assert.equal(checkRateLimit(reqA, t0 + 60_000).limited, false);
+  _resetRateLimits();
+});
+
+test("handler POST rejects bad or missing Origin with 403 and does not record", async () => {
+  _resetMemoryStore();
+  _resetRateLimits();
+  const body = { name: "Mallory", score: 50, accuracy: 100, streak: 50 };
+  for (const origin of ["https://evil.example", undefined]) {
+    const req = createMockReq({ method: "POST", body });
+    if (origin === undefined) delete req.headers.origin;
+    else req.headers.origin = origin;
+    const res = createMockRes();
+    await handler(req, res);
+    assert.equal(res.statusCode, 403);
+  }
+  const getRes = createMockRes();
+  await handler(createMockReq({ method: "GET" }), getRes);
+  assert.equal(getRes.body.topScores.length, 0);
+});
+
+test("handler POST returns 429 with Retry-After after too many requests", async () => {
+  _resetMemoryStore();
+  _resetRateLimits();
+  const body = { name: "Bob", score: 10, accuracy: 50, streak: 2 };
+  for (let i = 0; i < 5; i++) {
+    const res = createMockRes();
+    await handler(createMockReq({ method: "POST", body }), res);
+    assert.equal(res.statusCode, 200);
+  }
+  const limited = createMockRes();
+  await handler(createMockReq({ method: "POST", body }), limited);
+  assert.equal(limited.statusCode, 429);
+  assert.ok(Number(limited.getHeader("Retry-After")) >= 1);
+
+  const other = createMockRes();
+  await handler(
+    createMockReq({
+      method: "POST",
+      body,
+      headers: { "x-forwarded-for": "203.0.113.99" },
+    }),
+    other,
+  );
+  assert.equal(other.statusCode, 200);
+
+  const getRes = createMockRes();
+  await handler(createMockReq({ method: "GET" }), getRes);
+  assert.equal(getRes.statusCode, 200);
+  _resetRateLimits();
 });
