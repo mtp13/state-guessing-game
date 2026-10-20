@@ -621,6 +621,19 @@ function getBestScore(scores) {
   return scores.reduce((max, s) => Math.max(max, s.score || 0), 0);
 }
 
+// Close a dialog on a backdrop click, but only if the press also started there.
+function bindBackdropDismiss(dialog, close) {
+  let pressedOnBackdrop = false;
+  dialog.addEventListener("pointerdown", (e) => {
+    pressedOnBackdrop = e.target === dialog;
+  });
+  dialog.addEventListener("click", (e) => {
+    const dismiss = pressedOnBackdrop && e.target === dialog;
+    pressedOnBackdrop = false;
+    if (dismiss) close();
+  });
+}
+
 async function fetchScores() {
   try {
     const res = await fetch("./api/scores");
@@ -637,12 +650,16 @@ async function fetchScores() {
       setStoredNames(mergeUniqueNames(getStoredNames(), data.names));
     }
     const localScores = getStoredScores();
+    // Keep today's scores that failed to upload (unknown to the server).
+    const unsynced = filterTodayScores(localScores).filter(
+      (l) => l.id && !serverScores.some((s) => s.id === l.id),
+    );
     const merged = hasExplicitScores
-      ? serverScores
+      ? [...serverScores, ...unsynced]
       : serverScores.length > 0
         ? serverScores
         : localScores;
-    const sorted = sortScores(merged);
+    const sorted = sortScores(merged).slice(0, 10);
     setStoredScores(sorted);
     return sorted;
   } catch {
@@ -785,7 +802,6 @@ function bindDomElements() {
     guessesCard: document.getElementById("guesses-card"),
     guessesCount: document.getElementById("guesses-count"),
     bestCard: document.getElementById("best-card"),
-    bestLabel: document.getElementById("best-label"),
     bestScore: document.getElementById("best-score"),
     scoreCount: document.getElementById("score-count"),
     streakCount: document.getElementById("streak-count"),
@@ -867,9 +883,6 @@ function render(dom, gameState, options = {}) {
   }
 
   // Dynamic HUD: Best score/guesses
-  if (dom.bestLabel) {
-    dom.bestLabel.textContent = "Best";
-  }
   if (dom.bestScore) {
     if (isPractice) {
       dom.bestScore.textContent = getPracticeBestScore();
@@ -1017,10 +1030,12 @@ function render(dom, gameState, options = {}) {
     }
 
     if (!options.deferModal && dom.gameOverModal) {
-      if (typeof dom.gameOverModal.showModal === "function") {
-        if (!dom.gameOverModal.open) dom.gameOverModal.showModal();
-      } else {
-        dom.gameOverModal.removeAttribute("hidden");
+      dom.gameOverModal.removeAttribute("hidden");
+      if (
+        typeof dom.gameOverModal.showModal === "function" &&
+        !dom.gameOverModal.open
+      ) {
+        dom.gameOverModal.showModal();
       }
     }
   } else {
@@ -1699,11 +1714,7 @@ function initializeApp() {
   }
 
   if (dom.gameOverModal) {
-    dom.gameOverModal.addEventListener("click", (e) => {
-      if (e.target === dom.gameOverModal) {
-        closeGameOverModal();
-      }
-    });
+    bindBackdropDismiss(dom.gameOverModal, closeGameOverModal);
     dom.gameOverModal.addEventListener("cancel", (e) => {
       e.preventDefault();
       closeGameOverModal();
@@ -1711,11 +1722,7 @@ function initializeApp() {
   }
 
   if (dom.leaderboardModal) {
-    dom.leaderboardModal.addEventListener("click", (e) => {
-      if (e.target === dom.leaderboardModal) {
-        closeLeaderboardModal();
-      }
-    });
+    bindBackdropDismiss(dom.leaderboardModal, closeLeaderboardModal);
     dom.leaderboardModal.addEventListener("cancel", (e) => {
       e.preventDefault();
       closeLeaderboardModal();

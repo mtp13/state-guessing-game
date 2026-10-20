@@ -762,6 +762,30 @@ test("handler POST returns 429 with Retry-After after too many requests", async 
   _resetRateLimits();
 });
 
+test("app.js and api/scores.js agree on the leaderboard day key", () => {
+  const app = require("../app.js");
+  const samples = [
+    "2026-01-01T05:59:59Z", // still Dec 31 in Chicago
+    "2026-01-01T06:00:00Z", // midnight Chicago
+    "2026-07-04T04:59:59Z", // CDT: still Jul 3
+    "2026-07-04T05:00:00Z",
+    "not-a-date",
+    null,
+  ];
+  for (const sample of samples) {
+    assert.equal(app.getDayKey(sample), getDayKey(sample), String(sample));
+  }
+  const now = new Date("2026-07-04T12:00:00Z");
+  const scores = [
+    { id: "a", date: "2026-07-04T05:00:00Z" },
+    { id: "b", date: "2026-07-04T04:59:59Z" },
+  ];
+  assert.deepEqual(
+    app.filterTodayScores(scores, now).map((s) => s.id),
+    filterTodayScores(scores, now).map((s) => s.id),
+  );
+});
+
 test("fetchBlobScores returns ok:false when the blob list has more pages", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
