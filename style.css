@@ -841,6 +841,19 @@
   }
 
   @media (prefers-color-scheme: dark) {
+    /* Darker blue than the dark-theme --primary so white text keeps WCAG AA contrast */
+    .mode-btn[aria-checked="true"],
+    .btn-primary {
+      background-color: #2563eb;
+      color: #ffffff;
+    }
+
+    .mode-btn[aria-checked="true"]:hover,
+    .btn-primary:hover {
+      background-color: #1d4ed8;
+      color: #ffffff;
+    }
+
     .practice-best-banner {
       background-color: rgba(16, 185, 129, 0.18);
       color: #34d399;
