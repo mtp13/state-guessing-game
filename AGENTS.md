@@ -113,7 +113,15 @@ CI (`.github/workflows/ci.yml`) runs two jobs on Node 22 for pull requests and p
   branch from an up-to-date `master`, and never push to a merged branch.
 - Commit locally as often as you like, but push once per unit of work: every push to `master` is a Vercel deployment and every PR push is a CI run. Don't push WIP commits, and batch review fixes into one push.
 - When the work is finished, run `npm run format`, then `npm run lint`, `npm test` and `npm run test:e2e`. Commit only once all of them pass, then push the branch and open a pull request against `master` with `gh pr create`. Every commit must be formatted, not just the last one before a PR. Give the PR a summary and test notes. You don't need to ask first. If a PR is already open for the branch, push to update it.
-- **Mandatory PR review before merge:** Every PR must be reviewed by the review agent (MiniMax via OpenCode) after being submitted (`gh pr create`) and before merging. Run `opencode run -m opencode/minimax-m3.1-flash-free "Review PR #<n>..."`. Address any blockers, and keep a persistent list in `deferred-review-items.md` for items not implemented immediately that need future consideration. If further commits are pushed to the PR, re-run the review on the updated PR. Never merge a PR without completed review approval and green CI checks.
+- **Mandatory PR review before merge:** Every PR must be reviewed after being
+  submitted (`gh pr create`) and before merging. Run `review-pr <n>` with the
+  PR's head commit checked out (`review-pr -h` explains it). It asks two models
+  through OpenCode, by default GPT 6.1 Sol and Gemini 4 Argon, and prints each
+  review. Address any blockers, and keep a persistent list in
+  `deferred-review-items.md` for items not implemented immediately that need
+  future consideration. If further commits are pushed to the PR, re-run the
+  review on the updated PR. Never merge a PR without green CI checks and either
+  every reviewer approving or Mike saying to merge it.
 - Use the `gh` CLI for PRs, issues and checking CI runs. Each PR runs CI through GitHub
   Actions; check it with `gh pr checks` and fix any failures.
-- Never commit to, push to or force-push `master` directly.
+- Never commit to, push to or force-push `master` directly. Small edits to `deferred-review-items.md` go straight to `master` with no PR and no review.
